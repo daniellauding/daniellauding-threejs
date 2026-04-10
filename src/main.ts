@@ -574,8 +574,8 @@ function update(delta: number) {
 
   // Movement relative to CAMERA direction (WoW-style)
   const moveSpeed = player.speed * (player.isSprinting ? player.sprintMultiplier : 1) * (player.isCrouching ? 0.5 : 1)
-  const camForward = new THREE.Vector3(-Math.sin(cam.yaw), 0, -Math.cos(cam.yaw))
-  const camRight = new THREE.Vector3(-camForward.z, 0, camForward.x)
+  const camForward = new THREE.Vector3(Math.sin(cam.yaw), 0, Math.cos(cam.yaw))
+  const camRight = new THREE.Vector3(camForward.z, 0, -camForward.x)
 
   // Arrow left/right = rotate whole body + direction (WoW turn keys)
   const turnSpeed = 2.5
@@ -584,7 +584,7 @@ function update(delta: number) {
   if (keys['ArrowRight']) { player.facingYaw -= turnSpeed * delta; isTurning = true }
 
   // Arrow up/down = move in character facing direction
-  const facingForward = new THREE.Vector3(-Math.sin(player.facingYaw), 0, -Math.cos(player.facingYaw))
+  const facingForward = new THREE.Vector3(Math.sin(player.facingYaw), 0, Math.cos(player.facingYaw))
 
   // In classic mode, WASD uses character facing direction. In free mode, uses camera.
   const fwd = classicMode ? facingForward : camForward
@@ -679,7 +679,7 @@ function update(delta: number) {
 
   // Character faces movement direction, or turns with arrow keys
   if (moveDir.lengthSq() > 0.01 && !isTurning) {
-    player.facingYaw = Math.atan2(-moveDir.x, -moveDir.z)
+    player.facingYaw = Math.atan2(moveDir.x, moveDir.z)
   }
   // Always apply rotation (arrow keys change facingYaw directly)
   character.setRotation(player.facingYaw, delta)

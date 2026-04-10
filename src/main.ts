@@ -183,13 +183,15 @@ document.addEventListener('keydown', (e) => {
       cam.distance = 0
       cam.currentDistance = 0
       cam.thirdPerson = false
+      canvas.requestPointerLock() // lock cursor for FPS aiming
     } else {
       camera.fov = 60
       cam.distance = 5
       cam.thirdPerson = true
+      if (document.pointerLockElement === canvas) document.exitPointerLock()
     }
     camera.updateProjectionMatrix()
-    addChatMessage(fpsMode ? '* FPS mode (FOV 90)' : '* Third-person mode', 'system-msg')
+    addChatMessage(fpsMode ? '* FPS mode (FOV 90, mouse aims)' : '* Third-person mode', 'system-msg')
   }
 
   if (e.code === 'AltLeft' || e.code === 'AltRight') {
@@ -197,7 +199,7 @@ document.addEventListener('keydown', (e) => {
     if (!altFreelook) {
       altFreelook = true
       altYawOffset = 0
-      canvas.requestPointerLock() // lock pointer so mouse can orbit freely
+      if (!fpsMode) canvas.requestPointerLock() // FPS already has pointer lock
     }
   }
 })
@@ -206,7 +208,8 @@ document.addEventListener('keyup', (e) => {
   if (e.code === 'AltLeft' || e.code === 'AltRight') {
     altFreelook = false
     altYawOffset = 0
-    if (document.pointerLockElement === canvas) document.exitPointerLock()
+    // Only exit pointer lock if not in FPS mode
+    if (!fpsMode && document.pointerLockElement === canvas) document.exitPointerLock()
   }
 })
 
@@ -230,15 +233,35 @@ canvas.addEventListener('mouseup', (e) => {
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault())
 
-// Right-click drag = orbit camera OR steer character (classic mode)
+// Exit FPS mode when pointer lock is lost (Esc)
+document.addEventListener('pointerlockchange', () => {
+  if (fpsMode && document.pointerLockElement !== canvas) {
+    fpsMode = false
+    camera.fov = 60
+    cam.distance = 5
+    cam.thirdPerson = true
+    camera.updateProjectionMatrix()
+  }
+})
+
+// Right-click drag = orbit camera. In FPS mode: mouse always aims.
 canvas.addEventListener('mousemove', (e) => {
-  if (!isRightMouseDown) return
+  const isFpsLocked = fpsMode && document.pointerLockElement === canvas
+  if (!isRightMouseDown && !isFpsLocked) return
   const sensitivity = 0.003
-  cam.yaw += e.movementX * sensitivity
-  cam.pitch += e.movementY * sensitivity
+
+  if (fpsMode) {
+    // FPS: mouse right = look right, mouse up = look up (natural FPS aiming)
+    cam.yaw -= e.movementX * sensitivity
+    cam.pitch -= e.movementY * sensitivity
+  } else {
+    // Third-person orbit: drag right = orbit camera right around player
+    cam.yaw += e.movementX * sensitivity
+    cam.pitch += e.movementY * sensitivity
+  }
   cam.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, cam.pitch))
 
-  // Classic mode: right-drag also turns the character to face camera direction
+  // Classic mode: right-drag also turns the character
   if (classicMode) {
     player.facingYaw = cam.yaw
   }
@@ -759,15 +782,15 @@ function update(delta: number) {
 
   character.update(delta)
 
-  // FPS mode: character always faces camera direction
+  // FPS mode: character faces where camera looks, show partial model (hands/arms)
   if (fpsMode) {
-    player.facingYaw = cam.yaw + Math.PI // face where camera looks (away from cam offset)
+    player.facingYaw = cam.yaw + Math.PI
     character.setRotation(player.facingYaw, delta)
   }
 
-  // Show/hide model based on camera mode
+  // Show/hide model - in FPS show body (camera clips through head naturally)
   if (character.model) {
-    character.model.visible = cam.thirdPerson && !fpsMode
+    character.model.visible = fpsMode || cam.thirdPerson
   }
 
   // Camera orbits around player (WoW-style: independent of character facing)
@@ -791,12 +814,17 @@ function update(delta: number) {
     camera.position.y = Math.max(0.3, camera.position.y)
     camera.lookAt(eyePos)
   } else {
-    // First person: camera uses cam.yaw for look direction
+    // First person / FPS: camera at eye level
+    const fpsYaw = cam.yaw + altYawOffset // Alt = look around freely in FPS
     camera.position.copy(eyePos)
+    // Slight forward offset so you can see your own hands/body below
+    const lookFwd = new THREE.Vector3(-Math.sin(fpsYaw), 0, -Math.cos(fpsYaw))
+    camera.position.add(lookFwd.clone().multiplyScalar(0.15))
+
     const lookDir = new THREE.Vector3(
-      -Math.sin(cam.yaw) * Math.cos(cam.pitch),
+      -Math.sin(fpsYaw) * Math.cos(cam.pitch),
       Math.sin(cam.pitch),
-      -Math.cos(cam.yaw) * Math.cos(cam.pitch)
+      -Math.cos(fpsYaw) * Math.cos(cam.pitch)
     )
     camera.lookAt(camera.position.clone().add(lookDir))
   }

@@ -141,7 +141,7 @@ const player = {
 
 // --- Camera (WoW-style: mouse always controls camera, not character) ---
 const cam = {
-  yaw: 0,           // camera orbit yaw (mouse controls this)
+  yaw: Math.PI,     // camera orbit yaw - start behind player
   pitch: 0.3,       // camera orbit pitch
   distance: 5,
   minDistance: 1.5,

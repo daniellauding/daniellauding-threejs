@@ -255,9 +255,9 @@ canvas.addEventListener('mousemove', (e) => {
     cam.yaw -= e.movementX * sensitivity
     cam.pitch -= e.movementY * sensitivity
   } else {
-    // Third-person orbit: drag right = look right (natural)
+    // Third-person orbit: drag right = look right, drag up = look up
     cam.yaw -= e.movementX * sensitivity
-    cam.pitch -= e.movementY * sensitivity
+    cam.pitch += e.movementY * sensitivity
   }
   cam.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, cam.pitch))
 
@@ -272,7 +272,7 @@ document.addEventListener('mousemove', (e) => {
   if (!altFreelook || document.pointerLockElement !== canvas) return
   const sensitivity = 0.003
   altYawOffset -= e.movementX * sensitivity
-  cam.pitch -= e.movementY * sensitivity
+  cam.pitch += e.movementY * sensitivity
   cam.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, cam.pitch))
 })
 
@@ -389,7 +389,7 @@ if (isMobile) {
         const dx = touch.clientX - lookTouch.lastX
         const dy = touch.clientY - lookTouch.lastY
         cam.yaw -= dx * sensitivity
-        cam.pitch -= dy * sensitivity
+        cam.pitch += dy * sensitivity
         cam.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, cam.pitch))
         lookTouch.lastX = touch.clientX
         lookTouch.lastY = touch.clientY

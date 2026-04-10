@@ -155,6 +155,7 @@ const cam = {
 const keys: Record<string, boolean> = {}
 let chatActive = false
 let classicMode = false // false = free camera, true = mouse steers character
+let fpsMode = false     // F = toggle first-person FPS mode (FOV 90, locked behind)
 let isRightMouseDown = false
 let isLeftMouseDown = false
 let isBothMouseDown = false
@@ -173,8 +174,22 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'Tab') {
     e.preventDefault()
     classicMode = !classicMode
-    // addChatMessage is hoisted function, safe to call here
     addChatMessage(classicMode ? '* Classic mode (mouse steers)' : '* Free camera mode', 'system-msg')
+  }
+  if (e.code === 'KeyF' && !chatActive) {
+    fpsMode = !fpsMode
+    if (fpsMode) {
+      camera.fov = 90
+      cam.distance = 0
+      cam.currentDistance = 0
+      cam.thirdPerson = false
+    } else {
+      camera.fov = 60
+      cam.distance = 5
+      cam.thirdPerson = true
+    }
+    camera.updateProjectionMatrix()
+    addChatMessage(fpsMode ? '* FPS mode (FOV 90)' : '* Third-person mode', 'system-msg')
   }
 
   if (e.code === 'AltLeft' || e.code === 'AltRight') {
@@ -500,11 +515,67 @@ function handleChatCommand(text: string): boolean {
   }
 
   if (cmd === '/help') {
-    addChatMessage('Commands: ' + EMOTES.map(e => e.command).join(', ') + ', /stop', 'system-msg')
+    addChatMessage('Commands: /say, /yell, ' + EMOTES.map(e => e.command).join(', ') + ', /stop, /fps', 'system-msg')
+    return true
+  }
+
+  if (cmd === '/fps') {
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyF' }))
+    return true
+  }
+
+  // /say <text> = speech bubble
+  if (text.toLowerCase().startsWith('/say ')) {
+    const msg = text.slice(5).trim()
+    if (msg) showSpeechBubble(msg, false)
+    return true
+  }
+
+  // /yell <text> = red speech bubble
+  if (text.toLowerCase().startsWith('/yell ')) {
+    const msg = text.slice(6).trim()
+    if (msg) showSpeechBubble(msg, true)
     return true
   }
 
   return false
+}
+
+// --- Speech bubble ---
+const bubbleEl = document.createElement('div')
+bubbleEl.id = 'speech-bubble'
+bubbleEl.className = 'hidden'
+document.body.appendChild(bubbleEl)
+
+let bubbleTimeout: ReturnType<typeof setTimeout> | null = null
+
+function showSpeechBubble(text: string, isYell: boolean) {
+  bubbleEl.textContent = isYell ? text.toUpperCase() + '!' : text
+  bubbleEl.className = isYell ? 'yell' : ''
+  addChatMessage(isYell ? `Daniel yells: ${text.toUpperCase()}!` : `Daniel says: ${text}`, isYell ? 'yell-msg' : 'chat-msg')
+
+  if (bubbleTimeout) clearTimeout(bubbleTimeout)
+  bubbleTimeout = setTimeout(() => {
+    bubbleEl.className = 'hidden'
+  }, isYell ? 5000 : 4000)
+}
+
+// Update bubble position each frame (called from update loop)
+function updateBubblePosition() {
+  if (bubbleEl.classList.contains('hidden')) return
+  if (!character.model) return
+
+  const headPos = new THREE.Vector3(
+    player.position.x,
+    player.position.y + player.height + 0.5,
+    player.position.z
+  )
+  headPos.project(camera)
+
+  const x = (headPos.x * 0.5 + 0.5) * window.innerWidth
+  const y = (-headPos.y * 0.5 + 0.5) * window.innerHeight
+  bubbleEl.style.left = `${x}px`
+  bubbleEl.style.top = `${y}px`
 }
 
 document.addEventListener('keydown', (e) => {
@@ -688,9 +759,15 @@ function update(delta: number) {
 
   character.update(delta)
 
+  // FPS mode: character always faces camera direction
+  if (fpsMode) {
+    player.facingYaw = cam.yaw + Math.PI // face where camera looks (away from cam offset)
+    character.setRotation(player.facingYaw, delta)
+  }
+
   // Show/hide model based on camera mode
   if (character.model) {
-    character.model.visible = cam.thirdPerson
+    character.model.visible = cam.thirdPerson && !fpsMode
   }
 
   // Camera orbits around player (WoW-style: independent of character facing)
@@ -728,6 +805,8 @@ function update(delta: number) {
   for (const obj of sceneObjects) {
     obj.rotation.y += delta * 0.3
   }
+
+  updateBubblePosition()
 }
 
 function animate() {

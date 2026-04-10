@@ -191,9 +191,61 @@ body {
   color: #ffcc66;
   font-style: italic;
 }
+.chat-msg.yell-msg {
+  color: #ff4444;
+  font-weight: 700;
+  font-size: 15px;
+}
 .chat-msg.system-msg {
   color: rgba(255, 255, 255, 0.4);
   font-size: 11px;
+}
+
+/* --- Speech bubble --- */
+#speech-bubble {
+  position: fixed;
+  z-index: 30;
+  transform: translate(-50%, -100%);
+  background: white;
+  color: #111;
+  padding: 8px 16px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  max-width: 240px;
+  text-align: center;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  animation: bubblePop 0.25s ease-out;
+}
+#speech-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 8px solid transparent;
+  border-top-color: white;
+  border-bottom: 0;
+}
+#speech-bubble.yell {
+  background: #ff2222;
+  color: white;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+#speech-bubble.yell::after {
+  border-top-color: #ff2222;
+}
+#speech-bubble.hidden {
+  display: none;
+}
+
+@keyframes bubblePop {
+  0% { transform: translate(-50%, -100%) scale(0.5); opacity: 0; }
+  60% { transform: translate(-50%, -100%) scale(1.05); }
+  100% { transform: translate(-50%, -100%) scale(1); opacity: 1; }
 }
 
 @keyframes chatFadeIn {

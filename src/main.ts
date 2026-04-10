@@ -154,6 +154,7 @@ const cam = {
 // --- Input ---
 const keys: Record<string, boolean> = {}
 let chatActive = false
+let classicMode = false // false = free camera, true = mouse steers character
 let isRightMouseDown = false
 let isLeftMouseDown = false
 let isBothMouseDown = false
@@ -169,6 +170,12 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'Space') e.preventDefault()
   if (e.code === 'KeyV') cam.frontView = !cam.frontView
   if (e.code === 'KeyZ') player.isProne = !player.isProne
+  if (e.code === 'Tab') {
+    e.preventDefault()
+    classicMode = !classicMode
+    // addChatMessage is hoisted function, safe to call here
+    addChatMessage(classicMode ? '* Classic mode (mouse steers)' : '* Free camera mode', 'system-msg')
+  }
 
   if (e.code === 'AltLeft' || e.code === 'AltRight') {
     e.preventDefault()
@@ -208,13 +215,18 @@ canvas.addEventListener('mouseup', (e) => {
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault())
 
-// Right-click drag = orbit camera (uses movementX for smooth drag)
+// Right-click drag = orbit camera OR steer character (classic mode)
 canvas.addEventListener('mousemove', (e) => {
   if (!isRightMouseDown) return
   const sensitivity = 0.003
   cam.yaw -= e.movementX * sensitivity
   cam.pitch -= e.movementY * sensitivity
   cam.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, cam.pitch))
+
+  // Classic mode: right-drag also turns the character to face camera direction
+  if (classicMode) {
+    player.facingYaw = cam.yaw + Math.PI // face where camera looks
+  }
 })
 
 // Alt+mouse = freelook (pointer locked so no edge limit)
@@ -400,12 +412,9 @@ character.load(scene, {
   crouchIdle: '/models/animations/crouch-idle.glb',
   crouchWalk: '/models/animations/crouch-walk.glb',
   prone: '/models/animations/sleeping.glb',
-}).then(async () => {
-  loadingEl.textContent = 'Loading emotes...'
-  // Preload all emotes in parallel
-  await Promise.all(EMOTES.map(e => character.loadEmote(e)))
+}).then(() => {
   loadingEl.remove()
-  console.log('Character + emotes loaded!')
+  console.log('Character loaded! Emotes load on first use.')
 }).catch((err) => {
   loadingEl.textContent = 'Failed to load model'
   console.error(err)
@@ -440,7 +449,8 @@ document.addEventListener('click', () => {
   }
 })
 
-function triggerEmote(emote: Emote) {
+async function triggerEmote(emote: Emote) {
+  await character.loadEmote(emote) // lazy-load on first use (no-op if already loaded)
   character.playEmote(emote)
   addChatMessage(`* Daniel ${emote.name.toLowerCase()}s`, 'emote-msg')
   emotePanel.classList.add('hidden')
@@ -567,19 +577,26 @@ function update(delta: number) {
   const camForward = new THREE.Vector3(-Math.sin(cam.yaw), 0, -Math.cos(cam.yaw))
   const camRight = new THREE.Vector3(-camForward.z, 0, camForward.x)
 
-  // Arrow left/right = rotate character (like WoW turn keys)
+  // Arrow left/right = rotate whole body + direction (WoW turn keys)
   const turnSpeed = 2.5
-  if (keys['ArrowLeft']) player.facingYaw -= turnSpeed * delta
-  if (keys['ArrowRight']) player.facingYaw += turnSpeed * delta
+  let isTurning = false
+  if (keys['ArrowLeft']) { player.facingYaw -= turnSpeed * delta; isTurning = true }
+  if (keys['ArrowRight']) { player.facingYaw += turnSpeed * delta; isTurning = true }
 
   // Arrow up/down = move in character facing direction
   const facingForward = new THREE.Vector3(-Math.sin(player.facingYaw), 0, -Math.cos(player.facingYaw))
 
+  // In classic mode, WASD uses character facing direction. In free mode, uses camera.
+  const fwd = classicMode ? facingForward : camForward
+  const rgt = classicMode
+    ? new THREE.Vector3(-facingForward.z, 0, facingForward.x)
+    : camRight
+
   const moveDir = new THREE.Vector3()
-  if (keys['KeyW'] || isBothMouseDown) moveDir.add(camForward)
-  if (keys['KeyS']) moveDir.sub(camForward)
-  if (keys['KeyA']) moveDir.sub(camRight)
-  if (keys['KeyD']) moveDir.add(camRight)
+  if (keys['KeyW'] || isBothMouseDown) moveDir.add(fwd)
+  if (keys['KeyS']) moveDir.sub(fwd)
+  if (keys['KeyA']) moveDir.sub(rgt)
+  if (keys['KeyD']) moveDir.add(rgt)
   if (keys['ArrowUp']) moveDir.add(facingForward)
   if (keys['ArrowDown']) moveDir.sub(facingForward)
 
@@ -619,6 +636,17 @@ function update(delta: number) {
     player.isGrounded = true
   }
 
+  // World boundary (keep on ground plane, 95m radius)
+  const worldRadius = 95
+  const distFromCenter = Math.sqrt(player.position.x ** 2 + player.position.z ** 2)
+  if (distFromCenter > worldRadius) {
+    const angle = Math.atan2(player.position.x, player.position.z)
+    player.position.x = Math.sin(angle) * worldRadius
+    player.position.z = Math.cos(angle) * worldRadius
+    player.velocity.x = 0
+    player.velocity.z = 0
+  }
+
   // Object collision (simple sphere-based)
   const playerRadius = 0.5
   for (const obj of sceneObjects) {
@@ -649,11 +677,12 @@ function update(delta: number) {
   character.setPosition(player.position.x, player.position.y, player.position.z)
   character.updateFromMovement(horizontalSpeed, player.isGrounded, player.isCrouching, player.isSprinting, player.isProne)
 
-  // Character faces movement direction (not camera direction)
-  if (moveDir.lengthSq() > 0.01) {
+  // Character faces movement direction, or turns with arrow keys
+  if (moveDir.lengthSq() > 0.01 && !isTurning) {
     player.facingYaw = Math.atan2(moveDir.x, moveDir.z)
-    character.setRotation(player.facingYaw, delta)
   }
+  // Always apply rotation (arrow keys change facingYaw directly)
+  character.setRotation(player.facingYaw, delta)
 
   character.update(delta)
 

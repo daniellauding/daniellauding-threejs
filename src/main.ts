@@ -160,15 +160,37 @@ let isBothMouseDown = false
 
 document.getElementById('instructions')! // ref kept in DOM
 
+let altFreelook = false
+let altYawOffset = 0
+
 document.addEventListener('keydown', (e) => {
-  if (chatActive) return // don't capture game keys while chatting
+  if (chatActive) return
   keys[e.code] = true
   if (e.code === 'Space') e.preventDefault()
   if (e.code === 'KeyV') cam.frontView = !cam.frontView
   if (e.code === 'KeyZ') player.isProne = !player.isProne
+
+  if (e.code === 'AltLeft' || e.code === 'AltRight') {
+    e.preventDefault()
+    if (!altFreelook) {
+      altFreelook = true
+      altYawOffset = 0
+      canvas.requestPointerLock() // lock pointer so mouse can orbit freely
+    }
+  }
 })
 document.addEventListener('keyup', (e) => {
   keys[e.code] = false
+  if (e.code === 'AltLeft' || e.code === 'AltRight') {
+    altFreelook = false
+    altYawOffset = 0
+    if (document.pointerLockElement === canvas) document.exitPointerLock()
+  }
+})
+
+// Prevent Alt from blocking other keys
+window.addEventListener('keydown', (e) => {
+  if (e.altKey) e.preventDefault()
 })
 
 // Right-click drag = orbit camera. Left click = free for clicking objects.
@@ -186,11 +208,20 @@ canvas.addEventListener('mouseup', (e) => {
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault())
 
-// Right-click drag = orbit camera (cursor stays visible, natural direction)
+// Right-click drag = orbit camera (uses movementX for smooth drag)
 canvas.addEventListener('mousemove', (e) => {
   if (!isRightMouseDown) return
   const sensitivity = 0.003
   cam.yaw -= e.movementX * sensitivity
+  cam.pitch -= e.movementY * sensitivity
+  cam.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, cam.pitch))
+})
+
+// Alt+mouse = freelook (pointer locked so no edge limit)
+document.addEventListener('mousemove', (e) => {
+  if (!altFreelook || document.pointerLockElement !== canvas) return
+  const sensitivity = 0.003
+  altYawOffset -= e.movementX * sensitivity
   cam.pitch -= e.movementY * sensitivity
   cam.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, cam.pitch))
 })
@@ -536,11 +567,21 @@ function update(delta: number) {
   const camForward = new THREE.Vector3(-Math.sin(cam.yaw), 0, -Math.cos(cam.yaw))
   const camRight = new THREE.Vector3(-camForward.z, 0, camForward.x)
 
+  // Arrow left/right = rotate character (like WoW turn keys)
+  const turnSpeed = 2.5
+  if (keys['ArrowLeft']) player.facingYaw -= turnSpeed * delta
+  if (keys['ArrowRight']) player.facingYaw += turnSpeed * delta
+
+  // Arrow up/down = move in character facing direction
+  const facingForward = new THREE.Vector3(-Math.sin(player.facingYaw), 0, -Math.cos(player.facingYaw))
+
   const moveDir = new THREE.Vector3()
-  if (keys['KeyW'] || keys['ArrowUp'] || isBothMouseDown) moveDir.add(camForward)
-  if (keys['KeyS'] || keys['ArrowDown']) moveDir.sub(camForward)
-  if (keys['KeyA'] || keys['ArrowLeft']) moveDir.sub(camRight)
-  if (keys['KeyD'] || keys['ArrowRight']) moveDir.add(camRight)
+  if (keys['KeyW'] || isBothMouseDown) moveDir.add(camForward)
+  if (keys['KeyS']) moveDir.sub(camForward)
+  if (keys['KeyA']) moveDir.sub(camRight)
+  if (keys['KeyD']) moveDir.add(camRight)
+  if (keys['ArrowUp']) moveDir.add(facingForward)
+  if (keys['ArrowDown']) moveDir.sub(facingForward)
 
   // Mobile joystick input
   if (joystick.active) {
@@ -632,10 +673,11 @@ function update(delta: number) {
 
   if (cam.thirdPerson) {
     const sign = cam.frontView ? -1 : 1
+    const effectiveYaw = cam.yaw + altYawOffset
     const camOffset = new THREE.Vector3(
-      sign * Math.sin(cam.yaw) * Math.cos(cam.pitch) * cam.currentDistance,
+      sign * Math.sin(effectiveYaw) * Math.cos(cam.pitch) * cam.currentDistance,
       Math.sin(cam.pitch) * cam.currentDistance + player.height * 0.5,
-      sign * Math.cos(cam.yaw) * Math.cos(cam.pitch) * cam.currentDistance
+      sign * Math.cos(effectiveYaw) * Math.cos(cam.pitch) * cam.currentDistance
     )
     camera.position.copy(eyePos).add(camOffset)
     camera.position.y = Math.max(0.3, camera.position.y)

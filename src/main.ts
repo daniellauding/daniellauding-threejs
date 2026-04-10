@@ -641,7 +641,8 @@ document.addEventListener('keydown', (e) => {
       const text = chatInput.value.trim()
       if (text) {
         if (!handleChatCommand(text)) {
-          addChatMessage(`Daniel: ${text}`)
+          // No slash command = treat as /say
+          showSpeechBubble(text, false)
         }
       }
       chatInput.value = ''

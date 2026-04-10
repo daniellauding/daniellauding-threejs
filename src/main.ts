@@ -171,19 +171,46 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'Space') e.preventDefault()
   if (e.code === 'KeyV') cam.frontView = !cam.frontView
   if (e.code === 'KeyZ') player.isProne = !player.isProne
+  // Tab = cycle: Free → Classic → FPS → Free
   if (e.code === 'Tab') {
     e.preventDefault()
-    classicMode = !classicMode
-    addChatMessage(classicMode ? '* Classic mode (mouse steers)' : '* Free camera mode', 'system-msg')
+    if (fpsMode) {
+      // FPS → Free
+      fpsMode = false
+      classicMode = false
+      camera.fov = 60
+      cam.distance = 5
+      cam.thirdPerson = true
+      camera.updateProjectionMatrix()
+      if (document.pointerLockElement === canvas) document.exitPointerLock()
+      addChatMessage('* Free camera mode', 'system-msg')
+    } else if (classicMode) {
+      // Classic → FPS
+      classicMode = false
+      fpsMode = true
+      camera.fov = 90
+      cam.distance = 0
+      cam.currentDistance = 0
+      cam.thirdPerson = false
+      camera.updateProjectionMatrix()
+      canvas.requestPointerLock()
+      addChatMessage('* FPS mode (FOV 90, mouse aims)', 'system-msg')
+    } else {
+      // Free → Classic
+      classicMode = true
+      addChatMessage('* Classic mode (mouse steers)', 'system-msg')
+    }
   }
+  // F = quick toggle FPS
   if (e.code === 'KeyF' && !chatActive) {
     fpsMode = !fpsMode
+    classicMode = false
     if (fpsMode) {
       camera.fov = 90
       cam.distance = 0
       cam.currentDistance = 0
       cam.thirdPerson = false
-      canvas.requestPointerLock() // lock cursor for FPS aiming
+      canvas.requestPointerLock()
     } else {
       camera.fov = 60
       cam.distance = 5
@@ -191,7 +218,7 @@ document.addEventListener('keydown', (e) => {
       if (document.pointerLockElement === canvas) document.exitPointerLock()
     }
     camera.updateProjectionMatrix()
-    addChatMessage(fpsMode ? '* FPS mode (FOV 90, mouse aims)' : '* Third-person mode', 'system-msg')
+    addChatMessage(fpsMode ? '* FPS mode (FOV 90, mouse aims)' : '* Free camera mode', 'system-msg')
   }
 
   if (e.code === 'AltLeft' || e.code === 'AltRight') {

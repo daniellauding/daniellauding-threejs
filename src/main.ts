@@ -219,13 +219,13 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault())
 canvas.addEventListener('mousemove', (e) => {
   if (!isRightMouseDown) return
   const sensitivity = 0.003
-  cam.yaw -= e.movementX * sensitivity
-  cam.pitch -= e.movementY * sensitivity
+  cam.yaw += e.movementX * sensitivity
+  cam.pitch += e.movementY * sensitivity
   cam.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, cam.pitch))
 
   // Classic mode: right-drag also turns the character to face camera direction
   if (classicMode) {
-    player.facingYaw = cam.yaw + Math.PI // face where camera looks
+    player.facingYaw = cam.yaw
   }
 })
 
@@ -233,8 +233,8 @@ canvas.addEventListener('mousemove', (e) => {
 document.addEventListener('mousemove', (e) => {
   if (!altFreelook || document.pointerLockElement !== canvas) return
   const sensitivity = 0.003
-  altYawOffset -= e.movementX * sensitivity
-  cam.pitch -= e.movementY * sensitivity
+  altYawOffset += e.movementX * sensitivity
+  cam.pitch += e.movementY * sensitivity
   cam.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, cam.pitch))
 })
 
@@ -350,8 +350,8 @@ if (isMobile) {
         const sensitivity = 0.004
         const dx = touch.clientX - lookTouch.lastX
         const dy = touch.clientY - lookTouch.lastY
-        cam.yaw -= dx * sensitivity
-        cam.pitch -= dy * sensitivity
+        cam.yaw += dx * sensitivity
+        cam.pitch += dy * sensitivity
         cam.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, cam.pitch))
         lookTouch.lastX = touch.clientX
         lookTouch.lastY = touch.clientY
@@ -580,8 +580,8 @@ function update(delta: number) {
   // Arrow left/right = rotate whole body + direction (WoW turn keys)
   const turnSpeed = 2.5
   let isTurning = false
-  if (keys['ArrowLeft']) { player.facingYaw -= turnSpeed * delta; isTurning = true }
-  if (keys['ArrowRight']) { player.facingYaw += turnSpeed * delta; isTurning = true }
+  if (keys['ArrowLeft']) { player.facingYaw += turnSpeed * delta; isTurning = true }
+  if (keys['ArrowRight']) { player.facingYaw -= turnSpeed * delta; isTurning = true }
 
   // Arrow up/down = move in character facing direction
   const facingForward = new THREE.Vector3(-Math.sin(player.facingYaw), 0, -Math.cos(player.facingYaw))
@@ -679,7 +679,7 @@ function update(delta: number) {
 
   // Character faces movement direction, or turns with arrow keys
   if (moveDir.lengthSq() > 0.01 && !isTurning) {
-    player.facingYaw = Math.atan2(moveDir.x, moveDir.z)
+    player.facingYaw = Math.atan2(-moveDir.x, -moveDir.z)
   }
   // Always apply rotation (arrow keys change facingYaw directly)
   character.setRotation(player.facingYaw, delta)

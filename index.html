@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Interactive Me</title>
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+    <div id="overlay">
+      <div id="crosshair">+</div>
+      <div id="instructions">Click to start | WASD move | Mouse look | Scroll zoom | V front camera | Space jump | Shift sprint | Ctrl crouch</div>
+    </div>
+
+    <!-- Mobile touch controls -->
+    <div id="mobile-controls">
+      <div id="joystick-zone">
+        <div id="joystick-base">
+          <div id="joystick-thumb"></div>
+        </div>
+      </div>
+      <div id="action-buttons">
+        <button class="action-btn" id="btn-camera">CAM</button>
+        <div id="btn-row">
+          <button class="action-btn" id="btn-jump">JUMP</button>
+          <button class="action-btn" id="btn-sprint">RUN</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

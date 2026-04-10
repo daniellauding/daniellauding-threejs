@@ -574,8 +574,10 @@ function update(delta: number) {
 
   // Movement relative to CAMERA direction (WoW-style)
   const moveSpeed = player.speed * (player.isSprinting ? player.sprintMultiplier : 1) * (player.isCrouching ? 0.5 : 1)
-  const camForward = new THREE.Vector3(Math.sin(cam.yaw), 0, Math.cos(cam.yaw))
-  const camRight = new THREE.Vector3(camForward.z, 0, -camForward.x)
+  // Camera is at offset (sin(yaw), _, cos(yaw)) from player.
+  // "Forward" = away from camera = opposite of offset direction.
+  const camForward = new THREE.Vector3(-Math.sin(cam.yaw), 0, -Math.cos(cam.yaw))
+  const camRight = new THREE.Vector3(-camForward.z, 0, camForward.x)
 
   // Arrow left/right = rotate whole body + direction (WoW turn keys)
   const turnSpeed = 2.5

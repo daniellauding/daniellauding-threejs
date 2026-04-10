@@ -1,6 +1,7 @@
 import './style.css'
 import * as THREE from 'three'
 import { Character } from './character'
+import { EMOTES, type Emote } from './emotes'
 
 // --- Scene setup ---
 const canvas = document.getElementById('canvas') as HTMLCanvasElement
@@ -135,6 +136,8 @@ const player = {
   isGrounded: true,
   isCrouching: false,
   isSprinting: false,
+  isProne: false,
+  proneHeight: 0.4,
 }
 
 // --- Camera orbit ---
@@ -164,23 +167,30 @@ document.addEventListener('keydown', (e) => {
   keys[e.code] = true
   if (e.code === 'Space') e.preventDefault()
   if (e.code === 'KeyV') orbit.frontView = !orbit.frontView
+  if (e.code === 'KeyZ' && !chatActive) player.isProne = !player.isProne
 
-  // Alt = start freelook
+  // Alt = start freelook (prevent default to stop browser menu)
   if (e.code === 'AltLeft' || e.code === 'AltRight') {
     e.preventDefault()
-    orbit.freelook = true
-    orbit.freelookYaw = 0
-    orbit.freelookPitch = player.pitch
+    if (!orbit.freelook) {
+      orbit.freelook = true
+      orbit.freelookYaw = 0
+      orbit.freelookPitch = player.pitch
+    }
   }
 })
 document.addEventListener('keyup', (e) => {
   keys[e.code] = false
 
-  // Release Alt = snap camera back
   if (e.code === 'AltLeft' || e.code === 'AltRight') {
     orbit.freelook = false
     orbit.freelookYaw = 0
   }
+})
+
+// Prevent Alt from stealing focus/blocking other keys
+window.addEventListener('keydown', (e) => {
+  if (e.altKey) e.preventDefault()
 })
 
 canvas.addEventListener('click', () => {
@@ -373,27 +383,167 @@ character.load(scene, {
   jump: '/models/animations/jump.glb',
   crouchIdle: '/models/animations/crouch-idle.glb',
   crouchWalk: '/models/animations/crouch-walk.glb',
-}).then(() => {
+  prone: '/models/animations/sleeping.glb',
+}).then(async () => {
+  loadingEl.textContent = 'Loading emotes...'
+  // Preload all emotes in parallel
+  await Promise.all(EMOTES.map(e => character.loadEmote(e)))
   loadingEl.remove()
-  console.log('Character loaded!')
+  console.log('Character + emotes loaded!')
 }).catch((err) => {
   loadingEl.textContent = 'Failed to load model'
   console.error(err)
+})
+
+// --- Emote panel ---
+const emotePanel = document.getElementById('emote-panel')!
+const emoteGrid = document.getElementById('emote-grid')!
+const emoteToggle = document.getElementById('emote-toggle')!
+
+EMOTES.forEach((emote) => {
+  const btn = document.createElement('button')
+  btn.className = 'emote-btn'
+  btn.innerHTML = `<span class="icon">${emote.icon}</span><span class="label">${emote.name}</span>`
+  btn.title = emote.command
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    triggerEmote(emote)
+  })
+  emoteGrid.appendChild(btn)
+})
+
+emoteToggle.addEventListener('click', (e) => {
+  e.stopPropagation()
+  emotePanel.classList.toggle('hidden')
+})
+
+// Close emote panel on click outside
+document.addEventListener('click', () => {
+  if (!emotePanel.classList.contains('hidden')) {
+    emotePanel.classList.add('hidden')
+  }
+})
+
+function triggerEmote(emote: Emote) {
+  character.playEmote(emote)
+  addChatMessage(`* Daniel ${emote.name.toLowerCase()}s`, 'emote-msg')
+  emotePanel.classList.add('hidden')
+}
+
+// E key toggles emote panel
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyE' && !chatActive) {
+    emotePanel.classList.toggle('hidden')
+  }
+})
+
+// --- Chat system ---
+const chatInput = document.getElementById('chat-input') as HTMLInputElement
+const chatLog = document.getElementById('chat-log')!
+let chatActive = false
+
+function addChatMessage(text: string, className = 'chat-msg') {
+  const msg = document.createElement('div')
+  msg.className = `chat-msg ${className}`
+  msg.textContent = text
+  chatLog.appendChild(msg)
+  chatLog.scrollTop = chatLog.scrollHeight
+
+  // Auto-remove after 8 seconds
+  setTimeout(() => {
+    msg.style.transition = 'opacity 0.5s'
+    msg.style.opacity = '0'
+    setTimeout(() => msg.remove(), 500)
+  }, 8000)
+}
+
+function handleChatCommand(text: string): boolean {
+  const cmd = text.toLowerCase().trim()
+
+  // Check emote commands
+  const emote = EMOTES.find(e => e.command === cmd)
+  if (emote) {
+    triggerEmote(emote)
+    return true
+  }
+
+  // Built-in commands
+  if (cmd === '/stop' || cmd === '/cancel') {
+    character.stopEmote()
+    addChatMessage('* Stopped emote', 'system-msg')
+    return true
+  }
+
+  if (cmd === '/help') {
+    addChatMessage('Commands: ' + EMOTES.map(e => e.command).join(', ') + ', /stop', 'system-msg')
+    return true
+  }
+
+  return false
+}
+
+document.addEventListener('keydown', (e) => {
+  // Enter toggles chat
+  if (e.code === 'Enter') {
+    if (!chatActive) {
+      chatActive = true
+      chatInput.classList.add('active')
+      chatInput.focus()
+      if (isPointerLocked) document.exitPointerLock()
+      e.preventDefault()
+    } else {
+      const text = chatInput.value.trim()
+      if (text) {
+        if (!handleChatCommand(text)) {
+          addChatMessage(`Daniel: ${text}`)
+        }
+      }
+      chatInput.value = ''
+      chatInput.classList.remove('active')
+      chatInput.blur()
+      chatActive = false
+      e.preventDefault()
+    }
+  }
+
+  // Escape closes chat
+  if (e.code === 'Escape' && chatActive) {
+    chatInput.value = ''
+    chatInput.classList.remove('active')
+    chatInput.blur()
+    chatActive = false
+  }
+})
+
+// Prevent game input when typing
+chatInput.addEventListener('keydown', (e) => {
+  e.stopPropagation()
+})
+chatInput.addEventListener('keyup', (e) => {
+  e.stopPropagation()
 })
 
 // --- Update loop ---
 const clock = new THREE.Clock()
 
 function update(delta: number) {
-  // Sprint & crouch
+  // Sprint, crouch & prone
   player.isSprinting = keys['ShiftLeft'] || keys['ShiftRight']
   const wantsCrouch = keys['ControlLeft'] || keys['ControlRight']
 
-  if (wantsCrouch && !player.isCrouching) {
+  if (player.isProne) {
+    player.height = player.proneHeight
+  } else if (wantsCrouch && !player.isCrouching) {
     player.isCrouching = true
     player.height = player.crouchHeight
   } else if (!wantsCrouch && player.isCrouching) {
     player.isCrouching = false
+    player.height = player.standHeight
+  }
+
+  // Cancel prone if moving
+  if (player.isProne && (keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'] || keys['Space'])) {
+    player.isProne = false
     player.height = player.standHeight
   }
 
@@ -447,7 +597,7 @@ function update(delta: number) {
   // Update character model
   const horizontalSpeed = Math.sqrt(player.velocity.x ** 2 + player.velocity.z ** 2)
   character.setPosition(player.position.x, player.position.y, player.position.z)
-  character.updateFromMovement(horizontalSpeed, player.isGrounded, player.isCrouching, player.isSprinting)
+  character.updateFromMovement(horizontalSpeed, player.isGrounded, player.isCrouching, player.isSprinting, player.isProne)
 
   if (moveDir.lengthSq() > 0.01) {
     character.setRotation(Math.atan2(moveDir.x, moveDir.z), delta)

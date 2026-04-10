@@ -7,10 +7,6 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# 3D models (large binary files - use Git LFS or download separately)
-public/models/*.glb
-public/models/animations/*.glb
-
 node_modules
 dist
 dist-ssr

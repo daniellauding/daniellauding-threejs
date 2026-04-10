@@ -1,38 +1,32 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { type Emote } from './emotes'
 
-export type AnimationState = 'idle' | 'walk' | 'run' | 'jump' | 'crouchIdle' | 'crouchWalk'
+export type AnimationState = 'idle' | 'walk' | 'run' | 'jump' | 'crouchIdle' | 'crouchWalk' | 'prone'
 
 export class Character {
   model: THREE.Object3D | null = null
   mixer: THREE.AnimationMixer | null = null
-  actions: Map<AnimationState, THREE.AnimationAction> = new Map()
-  currentState: AnimationState = 'idle'
+  actions: Map<string, THREE.AnimationAction> = new Map()
+  currentState: string = 'idle'
+  playingEmote = false
   private fadeDuration = 0.25
   private modelOffset = new THREE.Vector3()
+  private loader = new GLTFLoader()
 
-  /**
-   * Load rigged model with separate animation GLBs (Meshy "withSkin" exports).
-   * Uses the idle GLB as the base model and loads animation clips from the others.
-   */
   async load(
     scene: THREE.Scene,
     animationPaths: Record<AnimationState, string>
   ): Promise<void> {
-    const loader = new GLTFLoader()
-
-    // Load idle as the base model (it has the mesh + skeleton + idle animation)
-    const idleGltf = await this.loadGLTF(loader, animationPaths.idle)
+    const idleGltf = await this.loadGLTF(this.loader, animationPaths.idle)
     this.model = idleGltf.scene
 
-    // Auto-scale to human height
     const box = new THREE.Box3().setFromObject(this.model)
     const size = box.getSize(new THREE.Vector3())
     const center = box.getCenter(new THREE.Vector3())
     const scale = 1.7 / size.y
     this.model.scale.setScalar(scale)
 
-    // Store offset so we can reapply it when setting position
     this.modelOffset.set(
       -center.x * scale,
       -box.min.y * scale,
@@ -40,7 +34,6 @@ export class Character {
     )
     this.model.position.copy(this.modelOffset)
 
-    // Enable shadows on all meshes
     this.model.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         child.castShadow = true
@@ -49,28 +42,30 @@ export class Character {
     })
 
     scene.add(this.model)
-
-    // Create animation mixer bound to this model
     this.mixer = new THREE.AnimationMixer(this.model)
 
-    // Register idle animation from base model
+    // Listen for emote finish
+    this.mixer.addEventListener('finished', () => {
+      if (this.playingEmote) {
+        this.playingEmote = false
+        this.setState('idle')
+      }
+    })
+
     if (idleGltf.animations.length > 0) {
       const idleAction = this.mixer.clipAction(idleGltf.animations[0])
       this.actions.set('idle', idleAction)
       idleAction.play()
     }
 
-    // Load remaining animations in parallel
     const otherStates = Object.entries(animationPaths).filter(([state]) => state !== 'idle')
     const loadPromises = otherStates.map(async ([state, path]) => {
       try {
-        const gltf = await this.loadGLTF(loader, path)
+        const gltf = await this.loadGLTF(this.loader, path)
         if (gltf.animations.length > 0) {
-          // clipAction with a clip from a different scene still works -
-          // Three.js matches bone names from the clip to the mixer's root
           const action = this.mixer!.clipAction(gltf.animations[0])
-          this.actions.set(state as AnimationState, action)
-          console.log(`Animation "${state}" loaded (${gltf.animations[0].duration.toFixed(1)}s)`)
+          this.actions.set(state, action)
+          console.log(`Animation "${state}" loaded`)
         }
       } catch (err) {
         console.warn(`Failed to load animation "${state}":`, err)
@@ -81,7 +76,59 @@ export class Character {
     console.log(`Character ready with ${this.actions.size} animations`)
   }
 
-  setState(newState: AnimationState) {
+  /**
+   * Preload an emote animation from its GLB file
+   */
+  async loadEmote(emote: Emote): Promise<void> {
+    const key = `emote:${emote.command}`
+    if (this.actions.has(key)) return // already loaded
+
+    try {
+      const gltf = await this.loadGLTF(this.loader, `/models/animations/${emote.file}`)
+      if (gltf.animations.length > 0 && this.mixer) {
+        const action = this.mixer.clipAction(gltf.animations[0])
+        this.actions.set(key, action)
+      }
+    } catch (err) {
+      console.warn(`Failed to load emote "${emote.name}":`, err)
+    }
+  }
+
+  /**
+   * Play an emote animation
+   */
+  playEmote(emote: Emote) {
+    const key = `emote:${emote.command}`
+    const action = this.actions.get(key)
+    if (!action) return
+
+    // Fade out current
+    const currentAction = this.actions.get(this.currentState)
+    if (currentAction) currentAction.fadeOut(this.fadeDuration)
+
+    action.reset().fadeIn(this.fadeDuration).play()
+
+    if (emote.loop) {
+      action.setLoop(THREE.LoopRepeat, Infinity)
+    } else {
+      action.setLoop(THREE.LoopOnce, 1)
+      action.clampWhenFinished = true
+    }
+
+    this.currentState = key
+    this.playingEmote = true
+  }
+
+  /**
+   * Stop current emote and return to idle
+   */
+  stopEmote() {
+    if (!this.playingEmote) return
+    this.playingEmote = false
+    this.setState('idle')
+  }
+
+  setState(newState: string) {
     if (newState === this.currentState) return
 
     const currentAction = this.actions.get(this.currentState)
@@ -103,11 +150,24 @@ export class Character {
     }
 
     this.currentState = newState
+    this.playingEmote = false
   }
 
-  updateFromMovement(speed: number, isGrounded: boolean, isCrouching: boolean, isSprinting: boolean) {
+  updateFromMovement(speed: number, isGrounded: boolean, isCrouching: boolean, isSprinting: boolean, isProne: boolean) {
+    // If playing emote and player starts moving, cancel emote
+    if (this.playingEmote && speed > 0.5) {
+      this.stopEmote()
+    }
+    // Don't override emote with movement state
+    if (this.playingEmote) return
+
     if (!isGrounded) {
       this.setState('jump')
+      return
+    }
+
+    if (isProne) {
+      this.setState('prone')
       return
     }
 

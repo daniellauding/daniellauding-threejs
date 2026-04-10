@@ -9,7 +9,19 @@
     <canvas id="canvas"></canvas>
     <div id="overlay">
       <div id="crosshair">+</div>
-      <div id="instructions">Click to start | WASD move | Mouse look | Scroll zoom | V front camera | Space jump | Shift sprint | Ctrl crouch</div>
+      <div id="instructions">Click to start | WASD move | Mouse look | Scroll zoom | V front cam | Alt freelook | Z prone | Space jump | Shift sprint | Ctrl crouch | Enter chat</div>
+    </div>
+
+    <!-- Emote menu (toggle with E or click button) -->
+    <div id="emote-panel" class="hidden">
+      <div id="emote-grid"></div>
+    </div>
+    <button id="emote-toggle">&#x1F60E;</button>
+
+    <!-- Chat input -->
+    <div id="chat-area">
+      <div id="chat-log"></div>
+      <input id="chat-input" type="text" placeholder="Enter to chat... /dance /sleep /box /backflip..." autocomplete="off" />
     </div>
 
     <!-- Mobile touch controls -->

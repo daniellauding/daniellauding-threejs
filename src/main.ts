@@ -124,8 +124,7 @@ shapes.forEach(({ geo, pos, color }) => {
 const player = {
   position: new THREE.Vector3(0, 0, 0),
   velocity: new THREE.Vector3(),
-  yaw: 0,
-  pitch: 0,
+  facingYaw: 0,  // direction character faces (only changes with movement/both-mouse)
   height: 1.7,
   speed: 8,
   sprintMultiplier: 2.2,
@@ -140,17 +139,16 @@ const player = {
   proneHeight: 0.4,
 }
 
-// --- Camera orbit ---
-const orbit = {
+// --- Camera (WoW-style: mouse always controls camera, not character) ---
+const cam = {
+  yaw: 0,           // camera orbit yaw (mouse controls this)
+  pitch: 0.3,       // camera orbit pitch
   distance: 5,
   minDistance: 1.5,
   maxDistance: 30,
   currentDistance: 5,
   thirdPerson: true,
-  frontView: false,    // V toggles front camera
-  freelook: false,     // Alt = freelook (camera orbits, player keeps direction)
-  freelookYaw: 0,      // separate yaw for freelook
-  freelookPitch: 0,
+  frontView: false,  // V toggles
 }
 
 // --- Input ---
@@ -166,31 +164,11 @@ const instructions = document.getElementById('instructions')!
 document.addEventListener('keydown', (e) => {
   keys[e.code] = true
   if (e.code === 'Space') e.preventDefault()
-  if (e.code === 'KeyV') orbit.frontView = !orbit.frontView
+  if (e.code === 'KeyV') cam.frontView = !cam.frontView
   if (e.code === 'KeyZ' && !chatActive) player.isProne = !player.isProne
-
-  // Alt = start freelook (prevent default to stop browser menu)
-  if (e.code === 'AltLeft' || e.code === 'AltRight') {
-    e.preventDefault()
-    if (!orbit.freelook) {
-      orbit.freelook = true
-      orbit.freelookYaw = 0
-      orbit.freelookPitch = player.pitch
-    }
-  }
 })
 document.addEventListener('keyup', (e) => {
   keys[e.code] = false
-
-  if (e.code === 'AltLeft' || e.code === 'AltRight') {
-    orbit.freelook = false
-    orbit.freelookYaw = 0
-  }
-})
-
-// Prevent Alt from stealing focus/blocking other keys
-window.addEventListener('keydown', (e) => {
-  if (e.altKey) e.preventDefault()
 })
 
 canvas.addEventListener('click', () => {
@@ -218,26 +196,20 @@ canvas.addEventListener('mouseup', (e) => {
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault())
 
+// Mouse always controls camera orbit (WoW-style freelook)
 document.addEventListener('mousemove', (e) => {
   if (!isPointerLocked) return
   const sensitivity = 0.002
-
-  if (orbit.freelook) {
-    orbit.freelookYaw += e.movementX * sensitivity
-    orbit.freelookPitch += e.movementY * sensitivity
-    orbit.freelookPitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, orbit.freelookPitch))
-  } else {
-    player.yaw += e.movementX * sensitivity
-    player.pitch += e.movementY * sensitivity
-    player.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, player.pitch))
-  }
+  cam.yaw += e.movementX * sensitivity
+  cam.pitch += e.movementY * sensitivity
+  cam.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, cam.pitch))
 })
 
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault()
-  orbit.distance += e.deltaY * 0.01
-  orbit.distance = Math.max(orbit.minDistance, Math.min(orbit.maxDistance, orbit.distance))
-  orbit.thirdPerson = orbit.distance > orbit.minDistance + 0.1
+  cam.distance += e.deltaY * 0.01
+  cam.distance = Math.max(cam.minDistance, Math.min(cam.maxDistance, cam.distance))
+  cam.thirdPerson = cam.distance > cam.minDistance + 0.1
 }, { passive: false })
 
 // --- Mobile touch controls ---
@@ -322,9 +294,9 @@ if (isMobile) {
         const sensitivity = 0.004
         const dx = touch.clientX - lookTouch.lastX
         const dy = touch.clientY - lookTouch.lastY
-        player.yaw += dx * sensitivity
-        player.pitch += dy * sensitivity
-        player.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, player.pitch))
+        cam.yaw += dx * sensitivity
+        cam.pitch += dy * sensitivity
+        cam.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, cam.pitch))
         lookTouch.lastX = touch.clientX
         lookTouch.lastY = touch.clientY
       }
@@ -362,8 +334,8 @@ if (isMobile) {
 
   btnCamera.addEventListener('touchstart', (e) => {
     e.preventDefault()
-    orbit.frontView = !orbit.frontView
-    btnCamera.classList.toggle('active', orbit.frontView)
+    cam.frontView = !cam.frontView
+    btnCamera.classList.toggle('active', cam.frontView)
   })
 }
 
@@ -515,12 +487,12 @@ document.addEventListener('keydown', (e) => {
   }
 })
 
-// Prevent game input when typing
+// Prevent game input when typing, but let Enter and Escape through
 chatInput.addEventListener('keydown', (e) => {
-  e.stopPropagation()
+  if (e.code !== 'Enter' && e.code !== 'Escape') e.stopPropagation()
 })
 chatInput.addEventListener('keyup', (e) => {
-  e.stopPropagation()
+  if (e.code !== 'Enter' && e.code !== 'Escape') e.stopPropagation()
 })
 
 // --- Update loop ---
@@ -547,21 +519,21 @@ function update(delta: number) {
     player.height = player.standHeight
   }
 
-  // Movement
+  // Movement relative to CAMERA direction (WoW-style)
   const moveSpeed = player.speed * (player.isSprinting ? player.sprintMultiplier : 1) * (player.isCrouching ? 0.5 : 1)
-  const forward = new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw))
-  const right = new THREE.Vector3(-forward.z, 0, forward.x)
+  const camForward = new THREE.Vector3(-Math.sin(cam.yaw), 0, -Math.cos(cam.yaw))
+  const camRight = new THREE.Vector3(-camForward.z, 0, camForward.x)
 
   const moveDir = new THREE.Vector3()
-  if (keys['KeyW'] || keys['ArrowUp'] || isBothMouseDown) moveDir.add(forward)
-  if (keys['KeyS'] || keys['ArrowDown']) moveDir.sub(forward)
-  if (keys['KeyA'] || keys['ArrowLeft']) moveDir.sub(right)
-  if (keys['KeyD'] || keys['ArrowRight']) moveDir.add(right)
+  if (keys['KeyW'] || keys['ArrowUp'] || isBothMouseDown) moveDir.add(camForward)
+  if (keys['KeyS'] || keys['ArrowDown']) moveDir.sub(camForward)
+  if (keys['KeyA'] || keys['ArrowLeft']) moveDir.sub(camRight)
+  if (keys['KeyD'] || keys['ArrowRight']) moveDir.add(camRight)
 
   // Mobile joystick input
   if (joystick.active) {
-    moveDir.add(forward.clone().multiplyScalar(-joystick.y))
-    moveDir.add(right.clone().multiplyScalar(joystick.x))
+    moveDir.add(camForward.clone().multiplyScalar(-joystick.y))
+    moveDir.add(camRight.clone().multiplyScalar(joystick.x))
   }
 
   if (moveDir.lengthSq() > 0) {
@@ -599,19 +571,21 @@ function update(delta: number) {
   character.setPosition(player.position.x, player.position.y, player.position.z)
   character.updateFromMovement(horizontalSpeed, player.isGrounded, player.isCrouching, player.isSprinting, player.isProne)
 
+  // Character faces movement direction (not camera direction)
   if (moveDir.lengthSq() > 0.01) {
-    character.setRotation(Math.atan2(moveDir.x, moveDir.z), delta)
+    player.facingYaw = Math.atan2(moveDir.x, moveDir.z)
+    character.setRotation(player.facingYaw, delta)
   }
 
   character.update(delta)
 
-  // Show/hide model based on camera mode (always visible during freelook)
+  // Show/hide model based on camera mode
   if (character.model) {
-    character.model.visible = orbit.thirdPerson || orbit.freelook
+    character.model.visible = cam.thirdPerson
   }
 
-  // Camera
-  orbit.currentDistance += (orbit.distance - orbit.currentDistance) * 5 * delta
+  // Camera orbits around player (WoW-style: independent of character facing)
+  cam.currentDistance += (cam.distance - cam.currentDistance) * 5 * delta
 
   const eyePos = new THREE.Vector3(
     player.position.x,
@@ -619,26 +593,23 @@ function update(delta: number) {
     player.position.z
   )
 
-  if (orbit.thirdPerson) {
-    // Camera yaw: use freelook offset when Alt is held
-    const camYaw = orbit.freelook ? player.yaw + orbit.freelookYaw : player.yaw
-    const camPitch = orbit.freelook ? orbit.freelookPitch : player.pitch
-    const sign = orbit.frontView ? -1 : 1
-
+  if (cam.thirdPerson) {
+    const sign = cam.frontView ? -1 : 1
     const camOffset = new THREE.Vector3(
-      sign * Math.sin(camYaw) * Math.cos(camPitch) * orbit.currentDistance,
-      Math.sin(camPitch) * orbit.currentDistance + player.height * 0.5,
-      sign * Math.cos(camYaw) * Math.cos(camPitch) * orbit.currentDistance
+      sign * Math.sin(cam.yaw) * Math.cos(cam.pitch) * cam.currentDistance,
+      Math.sin(cam.pitch) * cam.currentDistance + player.height * 0.5,
+      sign * Math.cos(cam.yaw) * Math.cos(cam.pitch) * cam.currentDistance
     )
     camera.position.copy(eyePos).add(camOffset)
     camera.position.y = Math.max(0.3, camera.position.y)
     camera.lookAt(eyePos)
   } else {
+    // First person: camera uses cam.yaw for look direction
     camera.position.copy(eyePos)
     const lookDir = new THREE.Vector3(
-      -Math.sin(player.yaw) * Math.cos(player.pitch),
-      Math.sin(player.pitch),
-      -Math.cos(player.yaw) * Math.cos(player.pitch)
+      -Math.sin(cam.yaw) * Math.cos(cam.pitch),
+      Math.sin(cam.pitch),
+      -Math.cos(cam.yaw) * Math.cos(cam.pitch)
     )
     camera.lookAt(camera.position.clone().add(lookDir))
   }

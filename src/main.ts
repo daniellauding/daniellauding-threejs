@@ -153,39 +153,29 @@ const cam = {
 
 // --- Input ---
 const keys: Record<string, boolean> = {}
-let isPointerLocked = false
+let chatActive = false
 let isRightMouseDown = false
 let isLeftMouseDown = false
 let isBothMouseDown = false
 
-const crosshair = document.getElementById('crosshair')!
-const instructions = document.getElementById('instructions')!
+document.getElementById('instructions')! // ref kept in DOM
 
 document.addEventListener('keydown', (e) => {
+  if (chatActive) return // don't capture game keys while chatting
   keys[e.code] = true
   if (e.code === 'Space') e.preventDefault()
   if (e.code === 'KeyV') cam.frontView = !cam.frontView
-  if (e.code === 'KeyZ' && !chatActive) player.isProne = !player.isProne
+  if (e.code === 'KeyZ') player.isProne = !player.isProne
 })
 document.addEventListener('keyup', (e) => {
   keys[e.code] = false
 })
 
-canvas.addEventListener('click', () => {
-  if (!isPointerLocked) canvas.requestPointerLock()
-})
-
-document.addEventListener('pointerlockchange', () => {
-  isPointerLocked = document.pointerLockElement === canvas
-  crosshair.classList.toggle('active', isPointerLocked)
-  instructions.classList.toggle('hidden', isPointerLocked)
-})
-
+// Right-click drag = orbit camera. Left click = free for clicking objects.
 canvas.addEventListener('mousedown', (e) => {
   if (e.button === 0) isLeftMouseDown = true
   if (e.button === 2) isRightMouseDown = true
   isBothMouseDown = isLeftMouseDown && isRightMouseDown
-  if (e.button === 2 && !isPointerLocked) canvas.requestPointerLock()
 })
 
 canvas.addEventListener('mouseup', (e) => {
@@ -196,21 +186,44 @@ canvas.addEventListener('mouseup', (e) => {
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault())
 
-// Mouse always controls camera orbit (WoW-style freelook)
-document.addEventListener('mousemove', (e) => {
-  if (!isPointerLocked) return
-  const sensitivity = 0.002
-  cam.yaw += e.movementX * sensitivity
-  cam.pitch += e.movementY * sensitivity
+// Right-click drag = orbit camera (cursor stays visible, natural direction)
+canvas.addEventListener('mousemove', (e) => {
+  if (!isRightMouseDown) return
+  const sensitivity = 0.003
+  cam.yaw -= e.movementX * sensitivity
+  cam.pitch -= e.movementY * sensitivity
   cam.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, cam.pitch))
 })
 
+// Scroll = zoom
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault()
   cam.distance += e.deltaY * 0.01
   cam.distance = Math.max(cam.minDistance, Math.min(cam.maxDistance, cam.distance))
   cam.thirdPerson = cam.distance > cam.minDistance + 0.1
 }, { passive: false })
+
+// Left click on objects = raycasting (placeholder for future interaction)
+const raycaster = new THREE.Raycaster()
+const mouseNDC = new THREE.Vector2()
+
+canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect()
+  mouseNDC.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+  mouseNDC.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+
+  raycaster.setFromCamera(mouseNDC, camera)
+  const hits = raycaster.intersectObjects(sceneObjects)
+  if (hits.length > 0) {
+    const obj = hits[0].object as THREE.Mesh
+    const mat = obj.material as THREE.MeshStandardMaterial
+    // Flash the object on click
+    const origEmissive = mat.emissive.getHex()
+    mat.emissive.set(0xffffff)
+    setTimeout(() => mat.emissive.setHex(origEmissive), 200)
+    console.log('Clicked:', obj.geometry.type)
+  }
+})
 
 // --- Mobile touch controls ---
 const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0
@@ -294,8 +307,8 @@ if (isMobile) {
         const sensitivity = 0.004
         const dx = touch.clientX - lookTouch.lastX
         const dy = touch.clientY - lookTouch.lastY
-        cam.yaw += dx * sensitivity
-        cam.pitch += dy * sensitivity
+        cam.yaw -= dx * sensitivity
+        cam.pitch -= dy * sensitivity
         cam.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, cam.pitch))
         lookTouch.lastX = touch.clientX
         lookTouch.lastY = touch.clientY
@@ -412,7 +425,6 @@ document.addEventListener('keydown', (e) => {
 // --- Chat system ---
 const chatInput = document.getElementById('chat-input') as HTMLInputElement
 const chatLog = document.getElementById('chat-log')!
-let chatActive = false
 
 function addChatMessage(text: string, className = 'chat-msg') {
   const msg = document.createElement('div')
@@ -461,7 +473,7 @@ document.addEventListener('keydown', (e) => {
       chatActive = true
       chatInput.classList.add('active')
       chatInput.focus()
-      if (isPointerLocked) document.exitPointerLock()
+      // focus chat input
       e.preventDefault()
     } else {
       const text = chatInput.value.trim()
@@ -564,6 +576,31 @@ function update(delta: number) {
     player.position.y = 0
     player.velocity.y = 0
     player.isGrounded = true
+  }
+
+  // Object collision (simple sphere-based)
+  const playerRadius = 0.5
+  for (const obj of sceneObjects) {
+    const objBox = new THREE.Box3().setFromObject(obj)
+    const objCenter = objBox.getCenter(new THREE.Vector3())
+    const objSize = objBox.getSize(new THREE.Vector3())
+    const objRadius = Math.max(objSize.x, objSize.z) * 0.5
+
+    const dx = player.position.x - objCenter.x
+    const dz = player.position.z - objCenter.z
+    const dist = Math.sqrt(dx * dx + dz * dz)
+    const minDist = playerRadius + objRadius
+
+    if (dist < minDist && dist > 0) {
+      // Push player out
+      const pushX = (dx / dist) * (minDist - dist)
+      const pushZ = (dz / dist) * (minDist - dist)
+      player.position.x += pushX
+      player.position.z += pushZ
+      // Kill velocity in collision direction
+      player.velocity.x *= 0.3
+      player.velocity.z *= 0.3
+    }
   }
 
   // Update character model

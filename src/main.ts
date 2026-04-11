@@ -377,18 +377,24 @@ canvas.addEventListener('click', (e) => {
 })
 
 // Right-click while holding weapon = aim/zoom
-canvas.addEventListener('mousedown', (e) => {
+canvas.addEventListener('mousedown', async (e) => {
   if (e.button === 2 && interactions.activeItem?.config.type === 'hold') {
     isAiming = true
-    camera.fov = 30 // zoom scope
+    camera.fov = 30
     camera.updateProjectionMatrix()
+    // Switch to aim animation
+    await character.loadEmote(interactionAnims.rifleAim)
+    character.playEmote(interactionAnims.rifleAim)
   }
 })
-canvas.addEventListener('mouseup', (e) => {
+canvas.addEventListener('mouseup', async (e) => {
   if (e.button === 2 && isAiming) {
     isAiming = false
     camera.fov = fpsMode ? 90 : 60
     camera.updateProjectionMatrix()
+    // Back to hold animation
+    await character.loadEmote(interactionAnims.rifleHold)
+    character.playEmote(interactionAnims.rifleHold)
   }
 })
 
@@ -1096,7 +1102,14 @@ let isSitting = false
 let isRiding = false
 let ridingItem: Interactable | null = null
 
-function handleInteraction() {
+// Preload interaction animations
+const interactionAnims = {
+  sit: { command: '/sit', name: 'Sit', icon: '', file: 'sit.glb', loop: true, category: 'pose' as const },
+  rifleHold: { command: '/riflehold', name: 'Rifle Hold', icon: '', file: 'rifle-hold.glb', loop: true, category: 'action' as const },
+  rifleAim: { command: '/rifleaim', name: 'Rifle Aim', icon: '', file: 'rifle-aim.glb', loop: true, category: 'action' as const },
+}
+
+async function handleInteraction() {
   const item = interactions.activeItem
 
   // Already interacting → stop
@@ -1149,7 +1162,9 @@ function handleInteraction() {
       player.velocity.set(0, 0, 0)
     }
     isSitting = true
-    character.setState('crouchIdle')
+    // Play sit animation (lazy-load first time)
+    await character.loadEmote(interactionAnims.sit)
+    character.playEmote(interactionAnims.sit)
     nearest.isActive = true
     interactions.activeItem = nearest
     addChatMessage(`* Sitting on ${nearest.config.name}`, 'system-msg')
@@ -1193,6 +1208,9 @@ function handleInteraction() {
       const worldScale = nearest.config.scale || 0.3
       nearest.model.scale.setScalar(worldScale / charScale)
       nearest.isActive = true
+      // Play rifle hold animation
+      await character.loadEmote(interactionAnims.rifleHold)
+      character.playEmote(interactionAnims.rifleHold)
     }
     interactions.activeItem = nearest
     addChatMessage(`* Picked up ${nearest.config.name}`, 'system-msg')

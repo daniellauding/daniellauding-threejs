@@ -580,7 +580,7 @@ character.load(scene, {
 // --- Emote panel ---
 const emotePanel = document.getElementById('emote-panel')!
 const emoteGrid = document.getElementById('emote-grid')!
-const emoteToggle = document.getElementById('emote-toggle')!
+const emoteToggle = document.getElementById('emote-toggle')
 
 EMOTES.forEach((emote) => {
   const btn = document.createElement('button')
@@ -594,7 +594,7 @@ EMOTES.forEach((emote) => {
   emoteGrid.appendChild(btn)
 })
 
-emoteToggle.addEventListener('click', (e) => {
+emoteToggle?.addEventListener('click', (e) => {
   e.stopPropagation()
   emotePanel.classList.toggle('hidden')
 })

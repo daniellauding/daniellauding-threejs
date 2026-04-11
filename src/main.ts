@@ -1123,25 +1123,23 @@ async function handleInteraction() {
     }
     if (isRiding && ridingItem?.model) {
       isRiding = false
-      ridingItem.model.removeFromParent()
-      scene.add(ridingItem.model)
-      ridingItem.model.position.set(player.position.x, 0, player.position.z + 1)
+      // Place skateboard on ground nearby
+      ridingItem.model.position.set(player.position.x + 1, 0, player.position.z)
       ridingItem.model.rotation.set(0, 0, 0)
-      ridingItem.model.scale.setScalar(ridingItem.config.scale || 1)
+      ridingItem.isActive = false
       ridingItem = null
       character.setState('idle')
       addChatMessage('* Stopped riding', 'system-msg')
     }
     if (item.config.type === 'hold' && item.model) {
       // Drop weapon in front of player
-      item.model.removeFromParent()
-      scene.add(item.model)
       const dropDir = new THREE.Vector3(-Math.sin(player.facingYaw), 0, -Math.cos(player.facingYaw))
       item.model.position.copy(player.position).add(dropDir.multiplyScalar(1.5))
       item.model.position.y = 0
       item.model.rotation.set(0, 0, 0)
       item.model.scale.setScalar(item.config.scale || 1)
       item.isActive = false
+      character.stopEmote()
       addChatMessage(`* Dropped ${item.config.name}`, 'system-msg')
     }
     interactions.activeItem = null
@@ -1170,24 +1168,7 @@ async function handleInteraction() {
     addChatMessage(`* Sitting on ${nearest.config.name}`, 'system-msg')
 
   } else if (nearest.config.type === 'ride') {
-    // Parent skateboard to character model
-    // IMPORTANT: child inherits parent's scale, so we must divide by character scale
-    // to preserve the skateboard's intended world size.
-    // Also, positions in model-local space need to be in un-scaled model units.
-    if (character.model) {
-      nearest.model.removeFromParent()
-      character.model.add(nearest.model)
-      const charScale = character.getModelScale()
-      // Feet are at -modelOffset.y in model-local space (before the position offset)
-      // In local coords: modelOffset.y / charScale gives the un-scaled foot position
-      const feetLocalY = -character.modelOffset.y / charScale
-      // Place skateboard deck surface at feet: raise by half deck height (~0.05m world = 0.05/charScale local)
-      nearest.model.position.set(0, feetLocalY + 0.05 / charScale, 0)
-      nearest.model.rotation.set(0, Math.PI / 2, 0) // rotate 90° so board faces forward
-      // Compensate for inherited character scale so skateboard stays world-sized
-      const worldScale = (nearest.config.scale || 1) * 1.2
-      nearest.model.scale.setScalar(worldScale / charScale)
-    }
+    // Keep skateboard in scene (not parented) - update position each frame
     isRiding = true
     ridingItem = nearest
     nearest.isActive = true
@@ -1195,24 +1176,12 @@ async function handleInteraction() {
     addChatMessage(`* Riding ${nearest.config.name}!`, 'system-msg')
 
   } else if (nearest.config.type === 'hold') {
-    // Attach weapon to character - try bone first, then fallback
-    // IMPORTANT: child inherits parent's scale, so we must compensate.
-    if (character.model) {
-      nearest.model.removeFromParent()
-      character.model.add(nearest.model)
-      const charScale = character.getModelScale()
-      // Right hand position in world coords: ~0.35 right, ~1.1 up, ~-0.15 forward
-      // Convert to model-local space by dividing by charScale
-      nearest.model.position.set(0.35 / charScale, 1.1 / charScale, -0.15 / charScale)
-      nearest.model.rotation.set(-Math.PI / 6, 0, -Math.PI / 6) // angled for aiming pose
-      const worldScale = nearest.config.scale || 0.3
-      nearest.model.scale.setScalar(worldScale / charScale)
-      nearest.isActive = true
-      // Play rifle hold animation
-      await character.loadEmote(interactionAnims.rifleHold)
-      character.playEmote(interactionAnims.rifleHold)
-    }
+    // Keep weapon in scene - update position each frame to follow character
+    nearest.isActive = true
     interactions.activeItem = nearest
+    // Play rifle hold animation
+    await character.loadEmote(interactionAnims.rifleHold)
+    character.playEmote(interactionAnims.rifleHold)
     addChatMessage(`* Picked up ${nearest.config.name}`, 'system-msg')
   }
 }
@@ -1433,14 +1402,36 @@ function update(delta: number) {
   // Update interactions (proximity prompts)
   interactions.update(player.position)
 
-  // Spin skateboard wheels when riding
-  if (isRiding && ridingItem?.model && horizontalSpeed > 0.5) {
-    ridingItem.model.traverse((child: THREE.Object3D) => {
-      // Spin any small child meshes (likely wheels)
-      if ((child as THREE.Mesh).isMesh && child !== ridingItem!.model) {
-        child.rotation.x += delta * horizontalSpeed * 2
-      }
-    })
+  // Update held/ridden objects to follow player in world space
+  if (isRiding && ridingItem?.model) {
+    // Skateboard at player's feet, facing same direction
+    ridingItem.model.position.set(player.position.x, 0.05, player.position.z)
+    ridingItem.model.rotation.set(0, player.facingYaw, 0)
+    ridingItem.model.scale.setScalar(ridingItem.config.scale || 1)
+
+    // Spin wheels
+    if (horizontalSpeed > 0.5) {
+      ridingItem.model.traverse((child: THREE.Object3D) => {
+        if ((child as THREE.Mesh).isMesh && child !== ridingItem!.model) {
+          child.rotation.x += delta * horizontalSpeed * 2
+        }
+      })
+    }
+  }
+
+  if (interactions.activeItem?.config.type === 'hold' && interactions.activeItem.model) {
+    const item = interactions.activeItem
+    // Position rifle at right hand area in world space
+    const rightOffset = new THREE.Vector3(0.25, 0.85, -0.25) // right, up, forward
+    // Rotate offset by character facing
+    rightOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.facingYaw)
+    item.model!.position.set(
+      player.position.x + rightOffset.x,
+      player.position.y + rightOffset.y,
+      player.position.z + rightOffset.z
+    )
+    item.model!.rotation.set(0, player.facingYaw + Math.PI, 0) // face same direction as character
+    item.model!.scale.setScalar(item.config.scale || 0.3)
   }
 
   // Stand on top of objects (y-axis collision) - includes interactables

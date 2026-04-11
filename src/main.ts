@@ -1104,55 +1104,63 @@ function handleInteraction() {
     if (isSitting) {
       isSitting = false
       character.setState('idle')
-      // Step away from chair
       player.position.x += 1
       addChatMessage('* Stood up', 'system-msg')
     }
     if (isRiding && ridingItem?.model) {
       isRiding = false
-      // Put skateboard back on ground where player is
       ridingItem.model.removeFromParent()
       scene.add(ridingItem.model)
       ridingItem.model.position.set(player.position.x, 0, player.position.z + 1)
       ridingItem.model.rotation.set(0, 0, 0)
+      ridingItem.model.scale.setScalar(ridingItem.config.scale || 1)
       ridingItem = null
       character.setState('idle')
       addChatMessage('* Stopped riding', 'system-msg')
     }
-    if (item.config.type === 'hold') {
-      item.detach(scene, player.position.clone().add(new THREE.Vector3(1, 0, 0)))
+    if (item.config.type === 'hold' && item.model) {
+      // Drop weapon in front of player
+      item.model.removeFromParent()
+      scene.add(item.model)
+      const dropDir = new THREE.Vector3(-Math.sin(player.facingYaw), 0, -Math.cos(player.facingYaw))
+      item.model.position.copy(player.position).add(dropDir.multiplyScalar(1.5))
+      item.model.position.y = 0
+      item.model.rotation.set(0, 0, 0)
+      item.model.scale.setScalar(item.config.scale || 1)
+      item.isActive = false
       addChatMessage(`* Dropped ${item.config.name}`, 'system-msg')
     }
-    interactions.activeItem!.isActive = false
     interactions.activeItem = null
     return
   }
 
   // Not interacting → pick up nearest
   const nearest = interactions.nearestItem
-  if (!nearest) return
+  if (!nearest || !nearest.model) return
 
   if (nearest.config.type === 'sit') {
-    // Teleport player to chair, play sit animation
-    const sitPos = nearest.getSitPosition()
-    if (sitPos) {
-      player.position.copy(sitPos)
+    // Move player to chair + sit higher (on the seat)
+    if (nearest.model) {
+      const chairPos = nearest.model.position.clone()
+      player.position.set(chairPos.x, chairPos.y, chairPos.z)
       player.velocity.set(0, 0, 0)
     }
     isSitting = true
-    character.setState('crouchIdle') // closest to sitting we have
+    character.setState('crouchIdle')
     nearest.isActive = true
     interactions.activeItem = nearest
     addChatMessage(`* Sitting on ${nearest.config.name}`, 'system-msg')
 
   } else if (nearest.config.type === 'ride') {
-    // Attach skateboard under player (child of character model)
-    if (nearest.model && character.model) {
+    // Parent skateboard to character, position at feet, correct rotation
+    if (character.model) {
       nearest.model.removeFromParent()
       character.model.add(nearest.model)
-      nearest.model.position.set(0, 0.05, 0) // at feet
-      nearest.model.rotation.set(0, 0, 0)
-      nearest.model.scale.setScalar(nearest.config.scale || 1)
+      // Position at feet, rotated so length goes forward
+      nearest.model.position.set(0, -0.85, 0)
+      nearest.model.rotation.set(0, Math.PI / 2, 0) // rotate 90° so board faces forward
+      const s = nearest.config.scale || 1
+      nearest.model.scale.setScalar(s * 1.2)
     }
     isRiding = true
     ridingItem = nearest
@@ -1161,17 +1169,17 @@ function handleInteraction() {
     addChatMessage(`* Riding ${nearest.config.name}!`, 'system-msg')
 
   } else if (nearest.config.type === 'hold') {
-    // Try to attach to bone, fallback to floating near hand area
+    // Attach weapon to character - try bone first, then fallback
     if (character.model) {
-      nearest.attachToBone(character.model, nearest.config.attachBone || 'RightHand')
-      if (!nearest.isActive && nearest.model) {
-        // Bone not found - attach relative to model as child
-        nearest.model.removeFromParent()
-        character.model.add(nearest.model)
-        nearest.model.position.set(0.3, 0.8, -0.2) // approximate right hand area
-        nearest.model.scale.setScalar(nearest.config.scale || 0.3)
-        nearest.isActive = true
-      }
+      // Always use fallback: attach as child of model in hand-ish position
+      nearest.model.removeFromParent()
+      character.model.add(nearest.model)
+      // Right hand approximate position (adjusted for Meshy models)
+      nearest.model.position.set(0.35, 0.7, -0.3)
+      nearest.model.rotation.set(0, 0, -Math.PI / 6) // slight angle
+      const s = nearest.config.scale || 0.3
+      nearest.model.scale.setScalar(s)
+      nearest.isActive = true
     }
     interactions.activeItem = nearest
     addChatMessage(`* Picked up ${nearest.config.name}`, 'system-msg')
@@ -1386,6 +1394,35 @@ function update(delta: number) {
 
   // Update interactions (proximity prompts)
   interactions.update(player.position)
+
+  // Spin skateboard wheels when riding
+  if (isRiding && ridingItem?.model && horizontalSpeed > 0.5) {
+    ridingItem.model.traverse((child: THREE.Object3D) => {
+      // Spin any small child meshes (likely wheels)
+      if ((child as THREE.Mesh).isMesh && child !== ridingItem!.model) {
+        child.rotation.x += delta * horizontalSpeed * 2
+      }
+    })
+  }
+
+  // Stand on top of objects (y-axis collision)
+  for (const obj of sceneObjects) {
+    const objBox = new THREE.Box3().setFromObject(obj)
+    const objMin = objBox.min
+    const objMax = objBox.max
+
+    // Check if player is above the object and within its XZ bounds
+    const inX = player.position.x > objMin.x - 0.3 && player.position.x < objMax.x + 0.3
+    const inZ = player.position.z > objMin.z - 0.3 && player.position.z < objMax.z + 0.3
+    const aboveTop = player.position.y >= objMax.y - 0.3 && player.position.y <= objMax.y + 1
+    const fallingOnto = player.velocity.y <= 0
+
+    if (inX && inZ && aboveTop && fallingOnto) {
+      player.position.y = objMax.y
+      player.velocity.y = 0
+      player.isGrounded = true
+    }
+  }
 
   // Weapon crosshair
   const holdingWeapon = interactions.activeItem?.config.type === 'hold'

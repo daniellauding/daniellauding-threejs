@@ -7,36 +7,39 @@
   </head>
   <body>
     <canvas id="canvas"></canvas>
+
+    <!-- Desktop instructions -->
     <div id="overlay">
-      <div id="instructions">Right-drag orbit | WASD move | Scroll zoom | Tab toggle camera mode | V front | Z prone | Space jump | Shift sprint | E emotes | Enter chat</div>
+      <div id="instructions">Right-drag orbit | WASD move | Scroll zoom | Tab mode | V front | Z prone | Space jump | Shift sprint | E emotes | Enter chat</div>
     </div>
 
-    <!-- Emote menu (toggle with E or click button) -->
+    <!-- Emote panel (E key or button) -->
     <div id="emote-panel" class="hidden">
       <div id="emote-grid"></div>
     </div>
-    <button id="emote-toggle">&#x1F60E;</button>
 
-    <!-- Chat input -->
+    <!-- Chat -->
     <div id="chat-area">
       <div id="chat-log"></div>
-      <input id="chat-input" type="text" placeholder="Enter to chat... /dance /sleep /box /backflip..." autocomplete="off" />
+      <input id="chat-input" type="text" placeholder="/dance /sleep /yell hello..." autocomplete="off" />
     </div>
 
-    <!-- Mobile touch controls -->
+    <!-- Mobile: joystick left side -->
     <div id="mobile-controls">
       <div id="joystick-zone">
         <div id="joystick-base">
           <div id="joystick-thumb"></div>
         </div>
       </div>
-      <div id="action-buttons">
-        <button class="action-btn" id="btn-camera">CAM</button>
-        <div id="btn-row">
-          <button class="action-btn" id="btn-jump">JUMP</button>
-          <button class="action-btn" id="btn-sprint">RUN</button>
-        </div>
-      </div>
+    </div>
+
+    <!-- Mobile: action bar right side (above chat) -->
+    <div id="mobile-bar">
+      <button class="bar-btn" id="btn-jump">JUMP</button>
+      <button class="bar-btn" id="btn-sprint">RUN</button>
+      <button class="bar-btn" id="btn-camera">CAM</button>
+      <button class="bar-btn" id="btn-emote-mobile">EMO</button>
+      <button class="bar-btn" id="btn-chat-mobile">CHAT</button>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

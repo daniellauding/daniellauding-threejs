@@ -434,7 +434,7 @@ if (isMobile) {
   canvas.addEventListener('touchend', resetLook)
   canvas.addEventListener('touchcancel', resetLook)
 
-  // Action buttons
+  // Action buttons (mobile bar)
   btnJump.addEventListener('touchstart', (e) => {
     e.preventDefault()
     keys['Space'] = true
@@ -458,6 +458,30 @@ if (isMobile) {
     cam.frontView = !cam.frontView
     btnCamera.classList.toggle('active', cam.frontView)
   })
+
+  // EMO button = open emote panel
+  const btnEmoteMobile = document.getElementById('btn-emote-mobile')
+  if (btnEmoteMobile) {
+    btnEmoteMobile.addEventListener('touchstart', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const panel = document.getElementById('emote-panel')!
+      panel.classList.toggle('hidden')
+    })
+  }
+
+  // CHAT button = open chat input
+  const btnChatMobile = document.getElementById('btn-chat-mobile')
+  if (btnChatMobile) {
+    btnChatMobile.addEventListener('touchstart', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      chatActive = true
+      const input = document.getElementById('chat-input') as HTMLInputElement
+      input.classList.add('active')
+      input.focus()
+    })
+  }
 }
 
 // --- Character (animated model) ---

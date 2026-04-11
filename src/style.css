@@ -30,25 +30,9 @@ body {
   z-index: 10;
 }
 
-#crosshair {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  color: rgba(255, 255, 255, 0.4);
-  font-size: 28px;
-  font-family: monospace;
-  display: none;
-  text-shadow: 0 0 4px rgba(0,0,0,0.5);
-}
-
-#crosshair.active {
-  display: block;
-}
-
 #instructions {
   position: absolute;
-  bottom: 60px;
+  bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
   color: rgba(255, 255, 255, 0.8);
@@ -76,35 +60,12 @@ body {
 }
 
 /* --- Emote panel --- */
-#emote-toggle {
-  position: fixed;
-  bottom: 50px;
-  right: 20px;
-  z-index: 25;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(8px);
-  font-size: 20px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.2s, border-color 0.2s;
-}
-#emote-toggle:hover {
-  transform: scale(1.1);
-  border-color: rgba(255, 255, 255, 0.6);
-}
-
 #emote-panel {
   position: fixed;
-  bottom: 100px;
-  right: 20px;
-  z-index: 25;
-  background: rgba(10, 10, 20, 0.85);
+  bottom: 80px;
+  right: 10px;
+  z-index: 30;
+  background: rgba(10, 10, 20, 0.9);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 12px;
@@ -165,7 +126,7 @@ body {
   left: 10px;
   z-index: 25;
   width: 340px;
-  max-width: calc(100vw - 80px);
+  max-width: calc(100vw - 20px);
 }
 
 #chat-log {
@@ -199,6 +160,34 @@ body {
 .chat-msg.system-msg {
   color: rgba(255, 255, 255, 0.4);
   font-size: 11px;
+}
+
+@keyframes chatFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+#chat-input {
+  width: 100%;
+  padding: 8px 14px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: white;
+  font-size: 13px;
+  font-family: system-ui, sans-serif;
+  outline: none;
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+#chat-input.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+#chat-input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
 }
 
 /* --- Speech bubble --- */
@@ -248,35 +237,7 @@ body {
   100% { transform: translate(-50%, -100%) scale(1); opacity: 1; }
 }
 
-@keyframes chatFadeIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-#chat-input {
-  width: 100%;
-  padding: 8px 14px;
-  background: rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  color: white;
-  font-size: 13px;
-  font-family: system-ui, sans-serif;
-  outline: none;
-  backdrop-filter: blur(8px);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s;
-}
-#chat-input.active {
-  opacity: 1;
-  pointer-events: auto;
-}
-#chat-input::placeholder {
-  color: rgba(255, 255, 255, 0.35);
-}
-
-/* --- Mobile touch controls --- */
+/* --- Mobile: joystick --- */
 #mobile-controls {
   display: none;
   position: fixed;
@@ -288,17 +249,9 @@ body {
   z-index: 15;
 }
 
-@media (pointer: coarse), (max-width: 768px) {
-  #mobile-controls { display: block; }
-  #instructions { display: none; }
-  #chat-area { width: calc(100vw - 80px); }
-  #emote-panel { bottom: 60px; right: 10px; }
-  #emote-toggle { bottom: 10px; right: 70px; }
-}
-
 #joystick-zone {
   position: absolute;
-  bottom: 20px;
+  bottom: 80px;
   left: 20px;
   width: 140px;
   height: 140px;
@@ -330,38 +283,81 @@ body {
   background: rgba(255, 255, 255, 0.6);
 }
 
-#action-buttons {
-  position: absolute;
-  bottom: 20px;
-  right: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+/* --- Mobile: action bar (bottom right, horizontal) --- */
+#mobile-bar {
+  display: none;
+  position: fixed;
+  bottom: 12px;
+  right: 12px;
+  z-index: 20;
+  flex-direction: row;
+  gap: 8px;
   pointer-events: auto;
 }
 
-.action-btn {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 11px;
-  font-weight: 600;
+.bar-btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
   display: flex;
   align-items: center;
   justify-content: center;
-  backdrop-filter: blur(4px);
   -webkit-tap-highlight-color: transparent;
+  transition: background 0.1s, border-color 0.1s;
 }
 
-.action-btn.active {
-  background: rgba(255, 255, 255, 0.3);
+.bar-btn:active,
+.bar-btn.active {
+  background: rgba(255, 255, 255, 0.25);
   border-color: rgba(255, 255, 255, 0.6);
 }
 
-#btn-row {
+/* --- Desktop: emote toggle button --- */
+#emote-toggle {
+  position: fixed;
+  bottom: 50px;
+  right: 20px;
+  z-index: 25;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  font-size: 20px;
+  cursor: pointer;
   display: flex;
-  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s, border-color 0.2s;
+}
+#emote-toggle:hover {
+  transform: scale(1.1);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+/* --- Mobile overrides --- */
+@media (pointer: coarse), (max-width: 768px) {
+  #mobile-controls { display: block; }
+  #mobile-bar { display: flex; }
+  #instructions { display: none; }
+  #emote-toggle { display: none; } /* use bar button instead */
+
+  #chat-area {
+    bottom: 72px;
+    left: 10px;
+    width: calc(100vw - 20px);
+  }
+
+  #emote-panel {
+    bottom: 72px;
+    right: 10px;
+  }
 }

@@ -616,7 +616,8 @@ function pollGamepad() {
 
   } else {
     // GAMEPLAY: normal controls
-    if (gp.buttons[0]?.pressed) keys['Space'] = true // A = jump (hold ok)
+    // A = jump (gamepad tracks separately so keyboard isn't overridden)
+    keys['GamepadA'] = gp.buttons[0]?.pressed || false
 
     if (pressed(1)) { // B = emote panel
       gamepadState.emoteIndex = 0
@@ -638,12 +639,8 @@ function pollGamepad() {
     if (pressed(9)) toggleMenu() // Start = menu
   }
 
-  // Triggers = sprint (always, regardless of context)
-  if (gp.buttons[6]?.pressed || gp.buttons[7]?.pressed) {
-    keys['ShiftLeft'] = true
-  } else if (gamepadState.connected) {
-    keys['ShiftLeft'] = sprintOn
-  }
+  // Triggers = sprint (gamepad tracks separately)
+  keys['GamepadSprint'] = gp.buttons[6]?.pressed || gp.buttons[7]?.pressed || false
 }
 
 // --- Quick chat UI (for gamepad) ---
@@ -1010,7 +1007,7 @@ function update(delta: number) {
   pollGamepad()
 
   // Sprint, crouch & prone
-  player.isSprinting = keys['ShiftLeft'] || keys['ShiftRight']
+  player.isSprinting = keys['ShiftLeft'] || keys['ShiftRight'] || keys['GamepadSprint']
   const wantsCrouch = keys['ControlLeft'] || keys['ControlRight']
 
   if (player.isProne) {
@@ -1024,7 +1021,7 @@ function update(delta: number) {
   }
 
   // Cancel prone if moving
-  if (player.isProne && (keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'] || keys['Space'])) {
+  if (player.isProne && (keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'] || keys['Space'] || keys['GamepadA'] || joystick.active)) {
     player.isProne = false
     player.height = player.standHeight
   }
@@ -1075,7 +1072,7 @@ function update(delta: number) {
   }
 
   // Jump
-  if (keys['Space'] && player.isGrounded) {
+  if ((keys['Space'] || keys['GamepadA']) && player.isGrounded) {
     player.velocity.y = player.jumpForce
     player.isGrounded = false
   }

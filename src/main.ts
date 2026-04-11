@@ -757,7 +757,7 @@ character.load(scene, {
   // Place interactable objects in scene
   const chairObj = new Interactable({
     name: 'Chair', type: 'sit', modelPath: '/models/objects/chair.glb',
-    scale: 0.8, promptText: 'Press G to sit',
+    scale: 0.4, promptText: 'Press G to sit',
   })
   const rifleObj = new Interactable({
     name: 'Rifle', type: 'hold', modelPath: '/models/objects/rifle.glb',
@@ -1158,7 +1158,7 @@ async function handleInteraction() {
     // Setting player.position.y = 0.35 puts feet above ground so hips land on seat.
     if (nearest.model) {
       const chairPos = nearest.model.position.clone()
-      player.position.set(chairPos.x, 0.35, chairPos.z)
+      player.position.set(chairPos.x, 0.2, chairPos.z)
       player.velocity.set(0, 0, 0)
     }
     isSitting = true
@@ -1330,9 +1330,16 @@ function update(delta: number) {
     player.velocity.z = 0
   }
 
-  // Object collision (simple sphere-based)
+  // Object collision (decorative + interactable objects)
   const playerRadius = 0.5
-  for (const obj of sceneObjects) {
+  const collidables: THREE.Object3D[] = [...sceneObjects]
+
+  // Add interactable objects (skip ones we're using)
+  for (const item of interactions.items) {
+    if (item.model && !item.isActive) collidables.push(item.model)
+  }
+
+  for (const obj of collidables) {
     const objBox = new THREE.Box3().setFromObject(obj)
     const objCenter = objBox.getCenter(new THREE.Vector3())
     const objSize = objBox.getSize(new THREE.Vector3())
@@ -1436,8 +1443,8 @@ function update(delta: number) {
     })
   }
 
-  // Stand on top of objects (y-axis collision)
-  for (const obj of sceneObjects) {
+  // Stand on top of objects (y-axis collision) - includes interactables
+  for (const obj of collidables) {
     const objBox = new THREE.Box3().setFromObject(obj)
     const objMin = objBox.min
     const objMax = objBox.max

@@ -4,6 +4,7 @@ export type EnvironmentType = 'default' | 'beach' | 'forest' | 'city'
 
 interface EnvironmentConfig {
   groundColor: number
+  groundTexture?: string // folder name in /textures/ (has color.jpg, normal.jpg, roughness.jpg)
   fogColor: number
   fogDensity: number
   skyTopColor: [number, number, number]
@@ -30,6 +31,7 @@ const ENVIRONMENTS: Record<EnvironmentType, EnvironmentConfig> = {
   },
   beach: {
     groundColor: 0xd4b896,
+    groundTexture: 'sand',
     fogColor: 0x87ceeb,
     fogDensity: 0.005,
     skyTopColor: [0.3, 0.6, 0.9],
@@ -42,6 +44,7 @@ const ENVIRONMENTS: Record<EnvironmentType, EnvironmentConfig> = {
   },
   forest: {
     groundColor: 0x2d4a1e,
+    groundTexture: 'grass',
     fogColor: 0x3a5a2e,
     fogDensity: 0.02,
     skyTopColor: [0.15, 0.3, 0.15],
@@ -54,6 +57,7 @@ const ENVIRONMENTS: Record<EnvironmentType, EnvironmentConfig> = {
   },
   city: {
     groundColor: 0x444444,
+    groundTexture: 'asphalt',
     fogColor: 0x555566,
     fogDensity: 0.008,
     skyTopColor: [0.2, 0.2, 0.3],
@@ -185,6 +189,67 @@ export function scatter(
     objects.push(obj)
   }
   return objects
+}
+
+/**
+ * Load PBR ground textures (color + normal + roughness)
+ */
+export function loadGroundTexture(folderName: string, ground: THREE.Mesh) {
+  const loader = new THREE.TextureLoader()
+  const mat = ground.material as THREE.MeshStandardMaterial
+
+  // Remove vertex colors when using textures
+  mat.vertexColors = false
+
+  const repeat = 40
+  const loadTex = (file: string) => {
+    const tex = loader.load(`/textures/${folderName}/${file}`)
+    tex.wrapS = THREE.RepeatWrapping
+    tex.wrapT = THREE.RepeatWrapping
+    tex.repeat.set(repeat, repeat)
+    return tex
+  }
+
+  mat.map = loadTex('color.jpg')
+  mat.map.colorSpace = THREE.SRGBColorSpace
+  mat.normalMap = loadTex('normal.jpg')
+  mat.roughnessMap = loadTex('roughness.jpg')
+  mat.roughness = 1
+  mat.metalness = 0
+  mat.color.set(0xffffff) // let texture define color
+  mat.needsUpdate = true
+}
+
+/**
+ * Reset ground to vertex colors (for default env)
+ */
+export function resetGroundToVertexColors(ground: THREE.Mesh, baseColor: number) {
+  const mat = ground.material as THREE.MeshStandardMaterial
+  mat.map = null
+  mat.normalMap = null
+  mat.roughnessMap = null
+  mat.vertexColors = true
+  mat.roughness = 0.85
+  mat.metalness = 0.05
+  mat.color.set(0xffffff)
+
+  // Recolor vertices
+  const colors = ground.geometry.attributes.color
+  const pos = ground.geometry.attributes.position
+  const base = new THREE.Color(baseColor)
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i)
+    const z = pos.getY(i)
+    const dist = Math.sqrt(x * x + z * z) / 100
+    const t = Math.min(dist, 1)
+    colors.setXYZ(i,
+      THREE.MathUtils.lerp(base.r, base.r * 0.5, t),
+      THREE.MathUtils.lerp(base.g, base.g * 0.5, t),
+      THREE.MathUtils.lerp(base.b, base.b * 0.5, t)
+    )
+  }
+  colors.needsUpdate = true
+  mat.needsUpdate = true
 }
 
 export { ENVIRONMENTS, type EnvironmentConfig }

@@ -2,6 +2,7 @@ import './style.css'
 import * as THREE from 'three'
 import { Character } from './character'
 import { EMOTES, type Emote } from './emotes'
+import { Interactable, InteractionManager } from './interactable'
 
 // --- Scene setup ---
 const canvas = document.getElementById('canvas') as HTMLCanvasElement
@@ -171,6 +172,18 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'Space') e.preventDefault()
   if (e.code === 'KeyV') cam.frontView = !cam.frontView
   if (e.code === 'KeyZ') player.isProne = !player.isProne
+  if (e.code === 'KeyG') {
+    const result = interactions.interact(scene, character.model, player.position)
+    if (result) {
+      if (result.type === 'sit') {
+        addChatMessage(`* Sitting on ${result.name}`, 'system-msg')
+      } else if (result.type === 'hold') {
+        addChatMessage(`* ${interactions.activeItem ? 'Picked up' : 'Dropped'} ${result.name}`, 'system-msg')
+      } else if (result.type === 'ride') {
+        addChatMessage(`* ${interactions.activeItem ? 'Riding' : 'Stopped riding'} ${result.name}`, 'system-msg')
+      }
+    }
+  }
   // Tab = cycle: Free → Classic → FPS → Free
   if (e.code === 'Tab') {
     e.preventDefault()
@@ -666,6 +679,9 @@ function updateQuickChatUI() {
   ).join('')
 }
 
+// --- Interactions ---
+const interactions = new InteractionManager()
+
 // --- Character (animated model) ---
 const character = new Character()
 
@@ -683,9 +699,38 @@ character.load(scene, {
   crouchIdle: '/models/animations/crouch-idle.glb',
   crouchWalk: '/models/animations/crouch-walk.glb',
   prone: '/models/animations/sleeping.glb',
-}).then(() => {
+}).then(async () => {
+  loadingEl.textContent = 'Placing objects...'
+
+  // Place interactable objects in scene
+  const chairObj = new Interactable({
+    name: 'Chair', type: 'sit', modelPath: '/models/objects/chair.glb',
+    scale: 0.8, promptText: 'Press G to sit',
+  })
+  const rifleObj = new Interactable({
+    name: 'Rifle', type: 'hold', modelPath: '/models/objects/rifle.glb',
+    scale: 0.3, attachBone: 'RightHand',
+    offset: new THREE.Vector3(0, 0, 0.1),
+    promptText: 'Press G to pick up',
+  })
+  const skateObj = new Interactable({
+    name: 'Skateboard', type: 'ride', modelPath: '/models/objects/skateboard.glb',
+    scale: 1.0, speedMultiplier: 2.5,
+    promptText: 'Press G to ride',
+  })
+
+  await Promise.all([
+    chairObj.load(scene, new THREE.Vector3(5, 0, -3)),
+    rifleObj.load(scene, new THREE.Vector3(-3, 0, -6)),
+    skateObj.load(scene, new THREE.Vector3(0, 0, -10)),
+  ])
+
+  interactions.add(chairObj)
+  interactions.add(rifleObj)
+  interactions.add(skateObj)
+
   loadingEl.remove()
-  console.log('Character loaded! Emotes load on first use.')
+  console.log('Character + objects loaded!')
 }).catch((err) => {
   loadingEl.textContent = 'Failed to load model'
   console.error(err)
@@ -928,7 +973,7 @@ document.addEventListener('keydown', (e) => {
 })
 
 // --- Environment switching ---
-import { ENVIRONMENTS, createWater, animateWater, createTree, createPalmTree, scatter, type EnvironmentType } from './environment'
+import { ENVIRONMENTS, createWater, animateWater, createTree, createPalmTree, scatter, loadGroundTexture, resetGroundToVertexColors, type EnvironmentType } from './environment'
 
 let currentEnv: EnvironmentType = 'default'
 let waterMesh: THREE.Mesh | null = null
@@ -953,25 +998,11 @@ function switchEnvironment(envType: EnvironmentType) {
   // Remove old water
   if (waterMesh) { scene.remove(waterMesh); waterMesh = null }
 
-  // Update ground color
-  const groundMat = ground.material as THREE.MeshStandardMaterial
-  if (groundMat.vertexColors) {
-    // Recolor vertices
-    const colors = ground.geometry.attributes.color
-    const pos = ground.geometry.attributes.position
-    const baseColor = new THREE.Color(config.groundColor)
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i)
-      const z = pos.getY(i)
-      const dist = Math.sqrt(x * x + z * z) / 100
-      const t = Math.min(dist, 1)
-      colors.setXYZ(i,
-        THREE.MathUtils.lerp(baseColor.r, baseColor.r * 0.5, t),
-        THREE.MathUtils.lerp(baseColor.g, baseColor.g * 0.5, t),
-        THREE.MathUtils.lerp(baseColor.b, baseColor.b * 0.5, t)
-      )
-    }
-    colors.needsUpdate = true
+  // Update ground: texture or vertex colors
+  if (config.groundTexture) {
+    loadGroundTexture(config.groundTexture, ground)
+  } else {
+    resetGroundToVertexColors(ground, config.groundColor)
   }
 
   // Update fog
@@ -1201,6 +1232,9 @@ function update(delta: number) {
   }
 
   updateBubblePosition()
+
+  // Update interactions (proximity prompts)
+  interactions.update(player.position)
 
   // Animate water if in beach env
   if (waterMesh && currentEnv === 'beach') {

@@ -563,6 +563,12 @@ function pollGamepad() {
   const emotePanel = document.getElementById('emote-panel')!
   const emoteOpen = !emotePanel.classList.contains('hidden')
 
+  // Clear gameplay gamepad keys when in any UI
+  if (menuOpen || quickChatOpen || emoteOpen) {
+    keys['GamepadA'] = false
+    keys['GamepadSprint'] = false
+  }
+
   if (menuOpen) {
     // IN MENU: D-pad navigates, A selects
     const btns = menuEl.querySelectorAll<HTMLButtonElement>('.menu-btn')

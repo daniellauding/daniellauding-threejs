@@ -1105,6 +1105,7 @@ function handleInteraction() {
       isSitting = false
       character.setState('idle')
       player.position.x += 1
+      player.position.y = 0 // back to ground level
       addChatMessage('* Stood up', 'system-msg')
     }
     if (isRiding && ridingItem?.model) {
@@ -1139,10 +1140,12 @@ function handleInteraction() {
   if (!nearest || !nearest.model) return
 
   if (nearest.config.type === 'sit') {
-    // Move player to chair + sit higher (on the seat)
+    // Move player to chair position, raise Y so character sits ON the seat
+    // Chair seat is ~0.45m high. crouchIdle lowers hips ~0.35m from standing.
+    // Setting player.position.y = 0.35 puts feet above ground so hips land on seat.
     if (nearest.model) {
       const chairPos = nearest.model.position.clone()
-      player.position.set(chairPos.x, chairPos.y, chairPos.z)
+      player.position.set(chairPos.x, 0.35, chairPos.z)
       player.velocity.set(0, 0, 0)
     }
     isSitting = true
@@ -1152,15 +1155,23 @@ function handleInteraction() {
     addChatMessage(`* Sitting on ${nearest.config.name}`, 'system-msg')
 
   } else if (nearest.config.type === 'ride') {
-    // Parent skateboard to character, position at feet, correct rotation
+    // Parent skateboard to character model
+    // IMPORTANT: child inherits parent's scale, so we must divide by character scale
+    // to preserve the skateboard's intended world size.
+    // Also, positions in model-local space need to be in un-scaled model units.
     if (character.model) {
       nearest.model.removeFromParent()
       character.model.add(nearest.model)
-      // Position at feet, rotated so length goes forward
-      nearest.model.position.set(0, -0.85, 0)
+      const charScale = character.getModelScale()
+      // Feet are at -modelOffset.y in model-local space (before the position offset)
+      // In local coords: modelOffset.y / charScale gives the un-scaled foot position
+      const feetLocalY = -character.modelOffset.y / charScale
+      // Place skateboard deck surface at feet: raise by half deck height (~0.05m world = 0.05/charScale local)
+      nearest.model.position.set(0, feetLocalY + 0.05 / charScale, 0)
       nearest.model.rotation.set(0, Math.PI / 2, 0) // rotate 90° so board faces forward
-      const s = nearest.config.scale || 1
-      nearest.model.scale.setScalar(s * 1.2)
+      // Compensate for inherited character scale so skateboard stays world-sized
+      const worldScale = (nearest.config.scale || 1) * 1.2
+      nearest.model.scale.setScalar(worldScale / charScale)
     }
     isRiding = true
     ridingItem = nearest
@@ -1170,15 +1181,17 @@ function handleInteraction() {
 
   } else if (nearest.config.type === 'hold') {
     // Attach weapon to character - try bone first, then fallback
+    // IMPORTANT: child inherits parent's scale, so we must compensate.
     if (character.model) {
-      // Always use fallback: attach as child of model in hand-ish position
       nearest.model.removeFromParent()
       character.model.add(nearest.model)
-      // Right hand approximate position (adjusted for Meshy models)
-      nearest.model.position.set(0.35, 0.7, -0.3)
-      nearest.model.rotation.set(0, 0, -Math.PI / 6) // slight angle
-      const s = nearest.config.scale || 0.3
-      nearest.model.scale.setScalar(s)
+      const charScale = character.getModelScale()
+      // Right hand position in world coords: ~0.35 right, ~1.1 up, ~-0.15 forward
+      // Convert to model-local space by dividing by charScale
+      nearest.model.position.set(0.35 / charScale, 1.1 / charScale, -0.15 / charScale)
+      nearest.model.rotation.set(-Math.PI / 6, 0, -Math.PI / 6) // angled for aiming pose
+      const worldScale = nearest.config.scale || 0.3
+      nearest.model.scale.setScalar(worldScale / charScale)
       nearest.isActive = true
     }
     interactions.activeItem = nearest

@@ -11,7 +11,7 @@ export class Character {
   currentState: string = 'idle'
   playingEmote = false
   private fadeDuration = 0.25
-  private modelOffset = new THREE.Vector3()
+  modelOffset = new THREE.Vector3()
   private loader = new GLTFLoader()
 
   async load(
@@ -182,6 +182,11 @@ export class Character {
     } else {
       this.setState('idle')
     }
+  }
+
+  /** Returns the uniform scale applied to the model (e.g. 1.7 / originalHeight) */
+  getModelScale(): number {
+    return this.model ? this.model.scale.x : 1
   }
 
   setPosition(x: number, y: number, z: number) {

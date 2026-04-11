@@ -173,16 +173,7 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyV') cam.frontView = !cam.frontView
   if (e.code === 'KeyZ') player.isProne = !player.isProne
   if (e.code === 'KeyG') {
-    const result = interactions.interact(scene, character.model, player.position)
-    if (result) {
-      if (result.type === 'sit') {
-        addChatMessage(`* Sitting on ${result.name}`, 'system-msg')
-      } else if (result.type === 'hold') {
-        addChatMessage(`* ${interactions.activeItem ? 'Picked up' : 'Dropped'} ${result.name}`, 'system-msg')
-      } else if (result.type === 'ride') {
-        addChatMessage(`* ${interactions.activeItem ? 'Riding' : 'Stopped riding'} ${result.name}`, 'system-msg')
-      }
-    }
+    handleInteraction()
   }
   // Tab = cycle: Free → Classic → FPS → Free
   if (e.code === 'Tab') {
@@ -328,21 +319,76 @@ canvas.addEventListener('wheel', (e) => {
 const raycaster = new THREE.Raycaster()
 const mouseNDC = new THREE.Vector2()
 
+// Left click = interact with objects OR shoot if holding weapon
+let isAiming = false
+const weaponCrosshair = document.createElement('div')
+weaponCrosshair.id = 'weapon-crosshair'
+weaponCrosshair.textContent = '+'
+document.body.appendChild(weaponCrosshair)
+
 canvas.addEventListener('click', (e) => {
   const rect = canvas.getBoundingClientRect()
   mouseNDC.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
   mouseNDC.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
 
+  // If holding a weapon, shoot (raycast from camera center)
+  const holdingWeapon = interactions.activeItem?.config.type === 'hold'
+  if (holdingWeapon) {
+    // Shoot from screen center
+    const shootRay = new THREE.Raycaster()
+    shootRay.setFromCamera(new THREE.Vector2(0, 0), camera)
+    const hits = shootRay.intersectObjects(sceneObjects, true)
+    if (hits.length > 0) {
+      const hit = hits[0]
+      // Muzzle flash effect on hit point
+      const flash = new THREE.Mesh(
+        new THREE.SphereGeometry(0.15, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0xffff00 })
+      )
+      flash.position.copy(hit.point)
+      scene.add(flash)
+      setTimeout(() => scene.remove(flash), 100)
+
+      // Flash the hit object
+      const obj = hit.object as THREE.Mesh
+      if (obj.material && (obj.material as THREE.MeshStandardMaterial).emissive) {
+        const mat = obj.material as THREE.MeshStandardMaterial
+        const orig = mat.emissive.getHex()
+        mat.emissive.set(0xff0000)
+        setTimeout(() => mat.emissive.setHex(orig), 200)
+      }
+      addChatMessage(`* Hit ${obj.geometry.type} at ${hit.distance.toFixed(1)}m`, 'system-msg')
+    } else {
+      addChatMessage('* Missed!', 'system-msg')
+    }
+    return
+  }
+
+  // Normal click: raycast objects
   raycaster.setFromCamera(mouseNDC, camera)
   const hits = raycaster.intersectObjects(sceneObjects)
   if (hits.length > 0) {
     const obj = hits[0].object as THREE.Mesh
     const mat = obj.material as THREE.MeshStandardMaterial
-    // Flash the object on click
     const origEmissive = mat.emissive.getHex()
     mat.emissive.set(0xffffff)
     setTimeout(() => mat.emissive.setHex(origEmissive), 200)
-    console.log('Clicked:', obj.geometry.type)
+  }
+})
+
+// Right-click while holding weapon = aim/zoom
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 2 && interactions.activeItem?.config.type === 'hold') {
+    isAiming = true
+    camera.fov = 30 // zoom scope
+    camera.updateProjectionMatrix()
+  }
+})
+canvas.addEventListener('mouseup', (e) => {
+  if (e.button === 2 && isAiming) {
+    isAiming = false
+    camera.fov = fpsMode ? 90 : 60
+    camera.updateProjectionMatrix()
   }
 })
 
@@ -729,6 +775,15 @@ character.load(scene, {
   interactions.add(rifleObj)
   interactions.add(skateObj)
 
+  // Log bone names for debugging attachments
+  if (character.model) {
+    const bones: string[] = []
+    character.model.traverse((child: THREE.Object3D) => {
+      if ((child as THREE.Bone).isBone) bones.push(child.name)
+    })
+    console.log('Character bones:', bones.join(', '))
+  }
+
   loadingEl.remove()
   console.log('Character + objects loaded!')
 }).catch((err) => {
@@ -1036,6 +1091,93 @@ function switchEnvironment(envType: EnvironmentType) {
   }
 }
 
+// --- Interaction state ---
+let isSitting = false
+let isRiding = false
+let ridingItem: Interactable | null = null
+
+function handleInteraction() {
+  const item = interactions.activeItem
+
+  // Already interacting → stop
+  if (item) {
+    if (isSitting) {
+      isSitting = false
+      character.setState('idle')
+      // Step away from chair
+      player.position.x += 1
+      addChatMessage('* Stood up', 'system-msg')
+    }
+    if (isRiding && ridingItem?.model) {
+      isRiding = false
+      // Put skateboard back on ground where player is
+      ridingItem.model.removeFromParent()
+      scene.add(ridingItem.model)
+      ridingItem.model.position.set(player.position.x, 0, player.position.z + 1)
+      ridingItem.model.rotation.set(0, 0, 0)
+      ridingItem = null
+      character.setState('idle')
+      addChatMessage('* Stopped riding', 'system-msg')
+    }
+    if (item.config.type === 'hold') {
+      item.detach(scene, player.position.clone().add(new THREE.Vector3(1, 0, 0)))
+      addChatMessage(`* Dropped ${item.config.name}`, 'system-msg')
+    }
+    interactions.activeItem!.isActive = false
+    interactions.activeItem = null
+    return
+  }
+
+  // Not interacting → pick up nearest
+  const nearest = interactions.nearestItem
+  if (!nearest) return
+
+  if (nearest.config.type === 'sit') {
+    // Teleport player to chair, play sit animation
+    const sitPos = nearest.getSitPosition()
+    if (sitPos) {
+      player.position.copy(sitPos)
+      player.velocity.set(0, 0, 0)
+    }
+    isSitting = true
+    character.setState('crouchIdle') // closest to sitting we have
+    nearest.isActive = true
+    interactions.activeItem = nearest
+    addChatMessage(`* Sitting on ${nearest.config.name}`, 'system-msg')
+
+  } else if (nearest.config.type === 'ride') {
+    // Attach skateboard under player (child of character model)
+    if (nearest.model && character.model) {
+      nearest.model.removeFromParent()
+      character.model.add(nearest.model)
+      nearest.model.position.set(0, 0.05, 0) // at feet
+      nearest.model.rotation.set(0, 0, 0)
+      nearest.model.scale.setScalar(nearest.config.scale || 1)
+    }
+    isRiding = true
+    ridingItem = nearest
+    nearest.isActive = true
+    interactions.activeItem = nearest
+    addChatMessage(`* Riding ${nearest.config.name}!`, 'system-msg')
+
+  } else if (nearest.config.type === 'hold') {
+    // Try to attach to bone, fallback to floating near hand area
+    if (character.model) {
+      nearest.attachToBone(character.model, nearest.config.attachBone || 'RightHand')
+      if (!nearest.isActive && nearest.model) {
+        // Bone not found - attach relative to model as child
+        nearest.model.removeFromParent()
+        character.model.add(nearest.model)
+        nearest.model.position.set(0.3, 0.8, -0.2) // approximate right hand area
+        nearest.model.scale.setScalar(nearest.config.scale || 0.3)
+        nearest.isActive = true
+      }
+    }
+    interactions.activeItem = nearest
+    addChatMessage(`* Picked up ${nearest.config.name}`, 'system-msg')
+  }
+}
+
 // --- Update loop ---
 const clock = new THREE.Clock()
 
@@ -1064,7 +1206,16 @@ function update(delta: number) {
   }
 
   // Movement relative to CAMERA direction (WoW-style)
-  const moveSpeed = player.speed * (player.isSprinting ? player.sprintMultiplier : 1) * (player.isCrouching ? 0.5 : 1)
+  // Can't move while sitting
+  if (isSitting) {
+    player.velocity.set(0, 0, 0)
+    character.update(delta)
+    // still update camera + bubble
+  }
+
+  // Ride speed boost
+  const rideMultiplier = isRiding && ridingItem?.config.speedMultiplier ? ridingItem.config.speedMultiplier : 1
+  const moveSpeed = player.speed * (player.isSprinting ? player.sprintMultiplier : 1) * (player.isCrouching ? 0.5 : 1) * rideMultiplier
   // Camera is at offset (sin(yaw), _, cos(yaw)) from player.
   // "Forward" = away from camera = opposite of offset direction.
   const camForward = new THREE.Vector3(-Math.sin(cam.yaw), 0, -Math.cos(cam.yaw))
@@ -1235,6 +1386,10 @@ function update(delta: number) {
 
   // Update interactions (proximity prompts)
   interactions.update(player.position)
+
+  // Weapon crosshair
+  const holdingWeapon = interactions.activeItem?.config.type === 'hold'
+  weaponCrosshair.className = holdingWeapon ? (isAiming ? 'active aiming' : 'active') : ''
 
   // Animate water if in beach env
   if (waterMesh && currentEnv === 'beach') {

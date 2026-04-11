@@ -436,6 +436,28 @@ body {
 }
 
 /* --- Interact prompt --- */
+/* --- Weapon crosshair --- */
+#weapon-crosshair {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 20;
+  pointer-events: none;
+  color: rgba(255, 60, 60, 0.7);
+  font-size: 24px;
+  font-family: monospace;
+  text-shadow: 0 0 4px rgba(0,0,0,0.8);
+  display: none;
+}
+#weapon-crosshair.active {
+  display: block;
+}
+#weapon-crosshair.aiming {
+  color: rgba(255, 255, 60, 0.9);
+  font-size: 16px;
+}
+
 #interact-prompt {
   position: fixed;
   bottom: 50%;

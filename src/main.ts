@@ -500,7 +500,11 @@ setupBarButton('btn-chat-mobile', () => {
 })
 
 // --- Gamepad support ---
-const gamepadState = { connected: false, index: -1 }
+const gamepadState = {
+  connected: false, index: -1,
+  bWasPressed: false, xWasPressed: false, yWasPressed: false,
+  dpadUpWas: false, startWas: false,
+}
 
 window.addEventListener('gamepadconnected', (e) => {
   gamepadState.connected = true
@@ -536,19 +540,49 @@ function pollGamepad() {
     cam.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, cam.pitch))
   }
 
-  // A (0) = jump, B (1) = sprint toggle, X (2) = emote panel, Y (3) = camera flip
+  // A (0) = jump
   if (gp.buttons[0].pressed) keys['Space'] = true
-  else keys['Space'] = gamepadState.connected ? false : keys['Space'] // don't override keyboard
 
-  if (gp.buttons[1].pressed && !gp.buttons[1].value) {
-    // handled per-frame, use a flag
+  // B (1) = emote panel toggle (on press, not hold)
+  if (gp.buttons[1].pressed && !gamepadState.bWasPressed) {
+    document.getElementById('emote-panel')!.classList.toggle('hidden')
   }
+  gamepadState.bWasPressed = gp.buttons[1].pressed
+
+  // X (2) = chat toggle
+  if (gp.buttons[2].pressed && !gamepadState.xWasPressed) {
+    if (!chatActive) {
+      chatActive = true
+      const input = document.getElementById('chat-input') as HTMLInputElement
+      input.classList.add('active')
+      input.focus()
+    }
+  }
+  gamepadState.xWasPressed = gp.buttons[2].pressed
+
+  // Y (3) = cycle camera mode (Tab)
+  if (gp.buttons[3].pressed && !gamepadState.yWasPressed) {
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Tab' }))
+  }
+  gamepadState.yWasPressed = gp.buttons[3].pressed
+
+  // D-pad up (12) = front view toggle
+  if (gp.buttons[12]?.pressed && !gamepadState.dpadUpWas) {
+    cam.frontView = !cam.frontView
+  }
+  gamepadState.dpadUpWas = gp.buttons[12]?.pressed || false
+
+  // Start (9) = toggle GUI menu
+  if (gp.buttons[9]?.pressed && !gamepadState.startWas) {
+    toggleMenu()
+  }
+  gamepadState.startWas = gp.buttons[9]?.pressed || false
 
   // L-trigger/R-trigger or bumpers for sprint
   if (gp.buttons[6]?.pressed || gp.buttons[7]?.pressed) {
     keys['ShiftLeft'] = true
   } else if (gamepadState.connected) {
-    keys['ShiftLeft'] = sprintOn // respect toggle
+    keys['ShiftLeft'] = sprintOn
   }
 }
 
@@ -762,6 +796,135 @@ chatInput.addEventListener('keyup', (e) => {
   if (e.code !== 'Enter' && e.code !== 'Escape') e.stopPropagation()
 })
 
+// --- GUI Menu (Esc or Start button) ---
+const menuEl = document.createElement('div')
+menuEl.id = 'game-menu'
+menuEl.className = 'hidden'
+menuEl.innerHTML = `
+  <div class="menu-panel">
+    <h2>Menu</h2>
+    <button class="menu-btn" data-action="resume">Resume</button>
+    <button class="menu-btn" data-action="env-default">Default World</button>
+    <button class="menu-btn" data-action="env-beach">Beach</button>
+    <button class="menu-btn" data-action="env-forest">Forest</button>
+    <button class="menu-btn" data-action="env-city">City</button>
+    <div class="menu-divider"></div>
+    <button class="menu-btn" data-action="help">Controls Help</button>
+  </div>
+`
+document.body.appendChild(menuEl)
+
+let menuOpen = false
+
+function toggleMenu() {
+  menuOpen = !menuOpen
+  menuEl.className = menuOpen ? '' : 'hidden'
+}
+
+// Menu button clicks
+menuEl.addEventListener('click', (e) => {
+  const target = e.target as HTMLElement
+  const action = target.dataset.action
+  if (!action) return
+
+  if (action === 'resume') {
+    toggleMenu()
+  } else if (action.startsWith('env-')) {
+    const envName = action.slice(4) as import('./environment').EnvironmentType
+    switchEnvironment(envName)
+    toggleMenu()
+    addChatMessage(`* Switched to ${envName} environment`, 'system-msg')
+  } else if (action === 'help') {
+    addChatMessage('* Controls: WASD move | Right-drag orbit | Tab mode | E emotes | Enter chat | G interact | Z prone | Space jump | Shift sprint | Esc menu', 'system-msg')
+    toggleMenu()
+  }
+})
+
+// Esc opens menu (when not in chat)
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape' && !chatActive) {
+    toggleMenu()
+  }
+})
+
+// --- Environment switching ---
+import { ENVIRONMENTS, createWater, animateWater, createTree, createPalmTree, scatter, type EnvironmentType } from './environment'
+
+let currentEnv: EnvironmentType = 'default'
+let waterMesh: THREE.Mesh | null = null
+let envObjects: THREE.Object3D[] = []
+
+function switchEnvironment(envType: EnvironmentType) {
+  const config = ENVIRONMENTS[envType]
+  currentEnv = envType
+
+  // Remove old env objects
+  for (const obj of envObjects) {
+    scene.remove(obj)
+    obj.traverse((child: THREE.Object3D) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const m = child as THREE.Mesh
+        if (m.geometry) m.geometry.dispose()
+      }
+    })
+  }
+  envObjects = []
+
+  // Remove old water
+  if (waterMesh) { scene.remove(waterMesh); waterMesh = null }
+
+  // Update ground color
+  const groundMat = ground.material as THREE.MeshStandardMaterial
+  if (groundMat.vertexColors) {
+    // Recolor vertices
+    const colors = ground.geometry.attributes.color
+    const pos = ground.geometry.attributes.position
+    const baseColor = new THREE.Color(config.groundColor)
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i)
+      const z = pos.getY(i)
+      const dist = Math.sqrt(x * x + z * z) / 100
+      const t = Math.min(dist, 1)
+      colors.setXYZ(i,
+        THREE.MathUtils.lerp(baseColor.r, baseColor.r * 0.5, t),
+        THREE.MathUtils.lerp(baseColor.g, baseColor.g * 0.5, t),
+        THREE.MathUtils.lerp(baseColor.b, baseColor.b * 0.5, t)
+      )
+    }
+    colors.needsUpdate = true
+  }
+
+  // Update fog
+  scene.fog = new THREE.FogExp2(config.fogColor, config.fogDensity)
+
+  // Update sky
+  const skyColors = sky.geometry.attributes.color
+  for (let i = 0; i < sky.geometry.attributes.position.count; i++) {
+    const y = sky.geometry.attributes.position.getY(i)
+    const t = (y / 400 + 1) * 0.5
+    skyColors.setXYZ(i,
+      THREE.MathUtils.lerp(config.skyBottomColor[0], config.skyTopColor[0], t * t),
+      THREE.MathUtils.lerp(config.skyBottomColor[1], config.skyTopColor[1], t),
+      THREE.MathUtils.lerp(config.skyBottomColor[2], config.skyTopColor[2], Math.sqrt(t))
+    )
+  }
+  skyColors.needsUpdate = true
+
+  // Update lighting
+  dirLight.color.set(config.sunColor)
+  dirLight.intensity = config.sunIntensity
+  dirLight.position.copy(config.sunPosition)
+
+  // Add environment-specific objects
+  if (envType === 'beach') {
+    waterMesh = createWater(200)
+    scene.add(waterMesh)
+    envObjects.push(...scatter(() => createPalmTree(4 + Math.random() * 3), 15, 80, scene, 8))
+  } else if (envType === 'forest') {
+    envObjects.push(...scatter(() => createTree(2 + Math.random() * 3), 40, 80, scene, 6))
+  }
+}
+
 // --- Update loop ---
 const clock = new THREE.Clock()
 
@@ -958,6 +1121,11 @@ function update(delta: number) {
   }
 
   updateBubblePosition()
+
+  // Animate water if in beach env
+  if (waterMesh && currentEnv === 'beach') {
+    animateWater(waterMesh, clock.elapsedTime)
+  }
 }
 
 function animate() {

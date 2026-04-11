@@ -237,9 +237,9 @@ body {
   100% { transform: translate(-50%, -100%) scale(1); opacity: 1; }
 }
 
-/* --- Mobile: joystick --- */
+/* --- On-screen controls (always visible) --- */
 #mobile-controls {
-  display: none;
+  display: block;
   position: fixed;
   bottom: 0;
   left: 0;
@@ -283,9 +283,9 @@ body {
   background: rgba(255, 255, 255, 0.6);
 }
 
-/* --- Mobile: action bar (bottom right, horizontal) --- */
+/* --- Action bar (always visible) --- */
 #mobile-bar {
-  display: none;
+  display: flex;
   position: fixed;
   bottom: 12px;
   right: 12px;
@@ -309,8 +309,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: background 0.1s, border-color 0.1s;
+}
+
+.bar-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.4);
 }
 
 .bar-btn:active,
@@ -343,12 +349,10 @@ body {
   border-color: rgba(255, 255, 255, 0.6);
 }
 
-/* --- Mobile overrides --- */
-@media (pointer: coarse), (max-width: 768px) {
-  #mobile-controls { display: block; }
-  #mobile-bar { display: flex; }
+/* --- Small screen overrides --- */
+@media (max-width: 768px) {
   #instructions { display: none; }
-  #emote-toggle { display: none; } /* use bar button instead */
+  #emote-toggle { display: none; }
 
   #chat-area {
     bottom: 72px;
@@ -359,5 +363,15 @@ body {
   #emote-panel {
     bottom: 72px;
     right: 10px;
+  }
+}
+
+/* Desktop: move chat above bar */
+@media (min-width: 769px) {
+  #chat-area {
+    bottom: 72px;
+  }
+  #emote-panel {
+    bottom: 80px;
   }
 }

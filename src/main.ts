@@ -333,154 +333,222 @@ canvas.addEventListener('click', (e) => {
   }
 })
 
-// --- Mobile touch controls ---
-const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0
-
-// Joystick state
+// --- On-screen controls (work with touch AND mouse) ---
 const joystick = { x: 0, y: 0, active: false, touchId: -1 }
 const lookTouch = { id: -1, startX: 0, startY: 0, lastX: 0, lastY: 0 }
 
-if (isMobile) {
-  const joystickZone = document.getElementById('joystick-zone')!
-  const joystickBase = document.getElementById('joystick-base')!
-  const joystickThumb = document.getElementById('joystick-thumb')!
-  const btnJump = document.getElementById('btn-jump')!
-  const btnSprint = document.getElementById('btn-sprint')!
-  const btnCamera = document.getElementById('btn-camera')!
+const joystickZone = document.getElementById('joystick-zone')!
+const joystickBase = document.getElementById('joystick-base')!
+const joystickThumb = document.getElementById('joystick-thumb')!
+const btnJump = document.getElementById('btn-jump')!
+const btnSprint = document.getElementById('btn-sprint')!
+const btnCamera = document.getElementById('btn-camera')!
 
-  // Joystick touch
-  joystickZone.addEventListener('touchstart', (e) => {
-    e.preventDefault()
-    const touch = e.changedTouches[0]
-    joystick.touchId = touch.identifier
-    joystick.active = true
-    joystickThumb.classList.add('active')
-  })
+// --- Joystick: shared logic for touch + mouse ---
+function updateJoystickFromPointer(clientX: number, clientY: number) {
+  const rect = joystickBase.getBoundingClientRect()
+  const cx = rect.left + rect.width / 2
+  const cy = rect.top + rect.height / 2
+  const dx = clientX - cx
+  const dy = clientY - cy
+  const maxDist = rect.width / 2
+  const dist = Math.min(Math.sqrt(dx * dx + dy * dy), maxDist)
+  const angle = Math.atan2(dy, dx)
 
-  joystickZone.addEventListener('touchmove', (e) => {
-    e.preventDefault()
-    for (const touch of Array.from(e.changedTouches)) {
-      if (touch.identifier === joystick.touchId) {
-        const rect = joystickBase.getBoundingClientRect()
-        const cx = rect.left + rect.width / 2
-        const cy = rect.top + rect.height / 2
-        const dx = touch.clientX - cx
-        const dy = touch.clientY - cy
-        const maxDist = rect.width / 2
-        const dist = Math.min(Math.sqrt(dx * dx + dy * dy), maxDist)
-        const angle = Math.atan2(dy, dx)
+  joystick.x = (Math.cos(angle) * dist) / maxDist
+  joystick.y = (Math.sin(angle) * dist) / maxDist
 
-        joystick.x = (Math.cos(angle) * dist) / maxDist
-        joystick.y = (Math.sin(angle) * dist) / maxDist
+  const thumbX = Math.cos(angle) * dist
+  const thumbY = Math.sin(angle) * dist
+  joystickThumb.style.transform = `translate(calc(-50% + ${thumbX}px), calc(-50% + ${thumbY}px))`
+}
 
-        const thumbX = Math.cos(angle) * dist
-        const thumbY = Math.sin(angle) * dist
-        joystickThumb.style.transform = `translate(calc(-50% + ${thumbX}px), calc(-50% + ${thumbY}px))`
-      }
-    }
-  })
+function resetJoystickState() {
+  joystick.x = 0
+  joystick.y = 0
+  joystick.active = false
+  joystick.touchId = -1
+  joystickThumb.style.transform = 'translate(-50%, -50%)'
+  joystickThumb.classList.remove('active')
+}
 
-  const resetJoystick = (e: TouchEvent) => {
-    for (const touch of Array.from(e.changedTouches)) {
-      if (touch.identifier === joystick.touchId) {
-        joystick.x = 0
-        joystick.y = 0
-        joystick.active = false
-        joystick.touchId = -1
-        joystickThumb.style.transform = 'translate(-50%, -50%)'
-        joystickThumb.classList.remove('active')
-      }
+// Joystick: touch
+joystickZone.addEventListener('touchstart', (e) => {
+  e.preventDefault()
+  const touch = e.changedTouches[0]
+  joystick.touchId = touch.identifier
+  joystick.active = true
+  joystickThumb.classList.add('active')
+})
+
+joystickZone.addEventListener('touchmove', (e) => {
+  e.preventDefault()
+  for (const touch of Array.from(e.changedTouches)) {
+    if (touch.identifier === joystick.touchId) {
+      updateJoystickFromPointer(touch.clientX, touch.clientY)
     }
   }
-  joystickZone.addEventListener('touchend', resetJoystick)
-  joystickZone.addEventListener('touchcancel', resetJoystick)
+})
 
-  // Look touch (anywhere on canvas not on controls)
-  canvas.addEventListener('touchstart', (e) => {
-    e.preventDefault()
-    if (lookTouch.id === -1) {
-      const touch = e.changedTouches[0]
-      lookTouch.id = touch.identifier
-      lookTouch.startX = touch.clientX
-      lookTouch.startY = touch.clientY
+const resetJoystickTouch = (e: TouchEvent) => {
+  for (const touch of Array.from(e.changedTouches)) {
+    if (touch.identifier === joystick.touchId) resetJoystickState()
+  }
+}
+joystickZone.addEventListener('touchend', resetJoystickTouch)
+joystickZone.addEventListener('touchcancel', resetJoystickTouch)
+
+// Joystick: mouse (click-drag on joystick)
+let joystickMouseDown = false
+joystickZone.addEventListener('mousedown', (e) => {
+  e.preventDefault()
+  joystickMouseDown = true
+  joystick.active = true
+  joystickThumb.classList.add('active')
+  updateJoystickFromPointer(e.clientX, e.clientY)
+})
+
+document.addEventListener('mousemove', (e) => {
+  if (joystickMouseDown) {
+    updateJoystickFromPointer(e.clientX, e.clientY)
+  }
+})
+
+document.addEventListener('mouseup', () => {
+  if (joystickMouseDown) {
+    joystickMouseDown = false
+    resetJoystickState()
+  }
+})
+
+// Look touch (swipe on canvas)
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault()
+  if (lookTouch.id === -1) {
+    const touch = e.changedTouches[0]
+    lookTouch.id = touch.identifier
+    lookTouch.lastX = touch.clientX
+    lookTouch.lastY = touch.clientY
+  }
+})
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault()
+  for (const touch of Array.from(e.changedTouches)) {
+    if (touch.identifier === lookTouch.id) {
+      const sensitivity = 0.004
+      const dx = touch.clientX - lookTouch.lastX
+      const dy = touch.clientY - lookTouch.lastY
+      cam.yaw -= dx * sensitivity
+      cam.pitch += dy * sensitivity
+      cam.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, cam.pitch))
       lookTouch.lastX = touch.clientX
       lookTouch.lastY = touch.clientY
     }
-  })
-
-  canvas.addEventListener('touchmove', (e) => {
-    e.preventDefault()
-    for (const touch of Array.from(e.changedTouches)) {
-      if (touch.identifier === lookTouch.id) {
-        const sensitivity = 0.004
-        const dx = touch.clientX - lookTouch.lastX
-        const dy = touch.clientY - lookTouch.lastY
-        cam.yaw -= dx * sensitivity
-        cam.pitch += dy * sensitivity
-        cam.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, cam.pitch))
-        lookTouch.lastX = touch.clientX
-        lookTouch.lastY = touch.clientY
-      }
-    }
-  })
-
-  const resetLook = (e: TouchEvent) => {
-    for (const touch of Array.from(e.changedTouches)) {
-      if (touch.identifier === lookTouch.id) {
-        lookTouch.id = -1
-      }
-    }
   }
-  canvas.addEventListener('touchend', resetLook)
-  canvas.addEventListener('touchcancel', resetLook)
+})
 
-  // Action buttons (mobile bar)
-  btnJump.addEventListener('touchstart', (e) => {
-    e.preventDefault()
-    keys['Space'] = true
-    btnJump.classList.add('active')
-  })
-  btnJump.addEventListener('touchend', () => {
-    keys['Space'] = false
-    btnJump.classList.remove('active')
-  })
+const resetLook = (e: TouchEvent) => {
+  for (const touch of Array.from(e.changedTouches)) {
+    if (touch.identifier === lookTouch.id) lookTouch.id = -1
+  }
+}
+canvas.addEventListener('touchend', resetLook)
+canvas.addEventListener('touchcancel', resetLook)
 
-  let sprintOn = false
-  btnSprint.addEventListener('touchstart', (e) => {
-    e.preventDefault()
-    sprintOn = !sprintOn
-    keys['ShiftLeft'] = sprintOn
-    btnSprint.classList.toggle('active', sprintOn)
-  })
+// --- Action buttons (work with touch + mouse click) ---
+let sprintOn = false
 
-  btnCamera.addEventListener('touchstart', (e) => {
-    e.preventDefault()
-    cam.frontView = !cam.frontView
-    btnCamera.classList.toggle('active', cam.frontView)
-  })
+// Helper: add both touch and click handlers
+function setupBarButton(id: string, onActivate: () => void, onDeactivate?: () => void) {
+  const btn = document.getElementById(id)
+  if (!btn) return
+  // Touch
+  btn.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); onActivate() })
+  if (onDeactivate) btn.addEventListener('touchend', () => onDeactivate())
+  // Mouse
+  btn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); onActivate() })
+  if (onDeactivate) btn.addEventListener('mouseup', () => onDeactivate())
+  btn.addEventListener('click', (e) => { e.stopPropagation() }) // prevent canvas click-through
+}
 
-  // EMO button = open emote panel
-  const btnEmoteMobile = document.getElementById('btn-emote-mobile')
-  if (btnEmoteMobile) {
-    btnEmoteMobile.addEventListener('touchstart', (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-      const panel = document.getElementById('emote-panel')!
-      panel.classList.toggle('hidden')
-    })
+setupBarButton('btn-jump',
+  () => { keys['Space'] = true; btnJump.classList.add('active') },
+  () => { keys['Space'] = false; btnJump.classList.remove('active') }
+)
+
+setupBarButton('btn-sprint', () => {
+  sprintOn = !sprintOn
+  keys['ShiftLeft'] = sprintOn
+  btnSprint.classList.toggle('active', sprintOn)
+})
+
+setupBarButton('btn-camera', () => {
+  cam.frontView = !cam.frontView
+  btnCamera.classList.toggle('active', cam.frontView)
+})
+
+setupBarButton('btn-emote-mobile', () => {
+  document.getElementById('emote-panel')!.classList.toggle('hidden')
+})
+
+setupBarButton('btn-chat-mobile', () => {
+  chatActive = true
+  const input = document.getElementById('chat-input') as HTMLInputElement
+  input.classList.add('active')
+  input.focus()
+})
+
+// --- Gamepad support ---
+const gamepadState = { connected: false, index: -1 }
+
+window.addEventListener('gamepadconnected', (e) => {
+  gamepadState.connected = true
+  gamepadState.index = e.gamepad.index
+  addChatMessage(`* Gamepad connected: ${e.gamepad.id}`, 'system-msg')
+})
+
+window.addEventListener('gamepaddisconnected', () => {
+  gamepadState.connected = false
+  gamepadState.index = -1
+  addChatMessage('* Gamepad disconnected', 'system-msg')
+})
+
+function pollGamepad() {
+  if (!gamepadState.connected) return
+  const gp = navigator.getGamepads()[gamepadState.index]
+  if (!gp) return
+
+  // Left stick = movement (axes 0, 1)
+  const deadzone = 0.15
+  const lx = Math.abs(gp.axes[0]) > deadzone ? gp.axes[0] : 0
+  const ly = Math.abs(gp.axes[1]) > deadzone ? gp.axes[1] : 0
+  joystick.x = lx
+  joystick.y = ly
+  joystick.active = lx !== 0 || ly !== 0
+
+  // Right stick = camera (axes 2, 3)
+  const rx = Math.abs(gp.axes[2]) > deadzone ? gp.axes[2] : 0
+  const ry = Math.abs(gp.axes[3]) > deadzone ? gp.axes[3] : 0
+  if (rx !== 0 || ry !== 0) {
+    cam.yaw -= rx * 0.04
+    cam.pitch += ry * 0.04
+    cam.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, cam.pitch))
   }
 
-  // CHAT button = open chat input
-  const btnChatMobile = document.getElementById('btn-chat-mobile')
-  if (btnChatMobile) {
-    btnChatMobile.addEventListener('touchstart', (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-      chatActive = true
-      const input = document.getElementById('chat-input') as HTMLInputElement
-      input.classList.add('active')
-      input.focus()
-    })
+  // A (0) = jump, B (1) = sprint toggle, X (2) = emote panel, Y (3) = camera flip
+  if (gp.buttons[0].pressed) keys['Space'] = true
+  else keys['Space'] = gamepadState.connected ? false : keys['Space'] // don't override keyboard
+
+  if (gp.buttons[1].pressed && !gp.buttons[1].value) {
+    // handled per-frame, use a flag
+  }
+
+  // L-trigger/R-trigger or bumpers for sprint
+  if (gp.buttons[6]?.pressed || gp.buttons[7]?.pressed) {
+    keys['ShiftLeft'] = true
+  } else if (gamepadState.connected) {
+    keys['ShiftLeft'] = sprintOn // respect toggle
   }
 }
 
@@ -698,6 +766,9 @@ chatInput.addEventListener('keyup', (e) => {
 const clock = new THREE.Clock()
 
 function update(delta: number) {
+  // Gamepad polling
+  pollGamepad()
+
   // Sprint, crouch & prone
   player.isSprinting = keys['ShiftLeft'] || keys['ShiftRight']
   const wantsCrouch = keys['ControlLeft'] || keys['ControlRight']

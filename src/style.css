@@ -325,6 +325,28 @@ body {
   border-color: rgba(255, 255, 255, 0.6);
 }
 
+/* --- Interact prompt --- */
+#interact-prompt {
+  position: fixed;
+  bottom: 50%;
+  left: 50%;
+  transform: translateX(-50%);
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 8px 20px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(8px);
+  z-index: 25;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+#interact-prompt.hidden {
+  opacity: 0;
+}
+
 /* --- Touch / small screen: show on-screen controls --- */
 @media (pointer: coarse), (max-width: 768px) {
   #mobile-controls { display: block; }

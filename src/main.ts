@@ -500,11 +500,22 @@ setupBarButton('btn-chat-mobile', () => {
 })
 
 // --- Gamepad support ---
-const gamepadState = {
+const gamepadState: {
+  connected: boolean; index: number;
+  prev: Record<number, boolean>;
+  menuIndex?: number; emoteIndex?: number;
+} = {
   connected: false, index: -1,
-  bWasPressed: false, xWasPressed: false, yWasPressed: false,
-  dpadUpWas: false, startWas: false,
+  prev: {},
 }
+
+// Quick-chat options for gamepad users (no keyboard needed)
+const QUICK_CHATS = [
+  'Hello!', 'GG!', 'Nice!', 'Thanks!', 'Bye!',
+  '/dance', '/backflip', '/box', '/sleep', '/spin',
+]
+let quickChatOpen = false
+let quickChatIndex = 0
 
 window.addEventListener('gamepadconnected', (e) => {
   gamepadState.connected = true
@@ -540,50 +551,116 @@ function pollGamepad() {
     cam.pitch = Math.max(-Math.PI / 6, Math.min(Math.PI / 2.2, cam.pitch))
   }
 
-  // A (0) = jump
-  if (gp.buttons[0].pressed) keys['Space'] = true
-
-  // B (1) = emote panel toggle (on press, not hold)
-  if (gp.buttons[1].pressed && !gamepadState.bWasPressed) {
-    document.getElementById('emote-panel')!.classList.toggle('hidden')
+  // Helper: detect button press (not hold)
+  function pressed(i: number): boolean {
+    const now = gp!.buttons[i]?.pressed || false
+    const was = gamepadState.prev[i] || false
+    gamepadState.prev[i] = now
+    return now && !was
   }
-  gamepadState.bWasPressed = gp.buttons[1].pressed
 
-  // X (2) = chat toggle
-  if (gp.buttons[2].pressed && !gamepadState.xWasPressed) {
-    if (!chatActive) {
-      chatActive = true
-      const input = document.getElementById('chat-input') as HTMLInputElement
-      input.classList.add('active')
-      input.focus()
+  // --- Context-sensitive controls ---
+  const emotePanel = document.getElementById('emote-panel')!
+  const emoteOpen = !emotePanel.classList.contains('hidden')
+
+  if (menuOpen) {
+    // IN MENU: D-pad navigates, A selects
+    const btns = menuEl.querySelectorAll<HTMLButtonElement>('.menu-btn')
+    const menuIndex = gamepadState.menuIndex ?? 0
+
+    if (pressed(12)) gamepadState.menuIndex = Math.max(0, menuIndex - 1) // D-up
+    if (pressed(13)) gamepadState.menuIndex = Math.min(btns.length - 1, menuIndex + 1) // D-down
+
+    // Highlight current
+    btns.forEach((b, i) => b.classList.toggle('active', i === (gamepadState.menuIndex ?? 0)))
+
+    if (pressed(0)) btns[gamepadState.menuIndex ?? 0]?.click() // A = select
+    if (pressed(1)) toggleMenu() // B = close
+
+  } else if (quickChatOpen) {
+    // IN QUICK-CHAT: D-pad picks, A sends, B closes
+    if (pressed(12)) quickChatIndex = (quickChatIndex - 1 + QUICK_CHATS.length) % QUICK_CHATS.length // D-up
+    if (pressed(13)) quickChatIndex = (quickChatIndex + 1) % QUICK_CHATS.length // D-down
+
+    updateQuickChatUI()
+
+    if (pressed(0)) { // A = send
+      const msg = QUICK_CHATS[quickChatIndex]
+      if (msg.startsWith('/')) {
+        handleChatCommand(msg)
+      } else {
+        showSpeechBubble(msg, false)
+      }
+      quickChatOpen = false
+      updateQuickChatUI()
     }
-  }
-  gamepadState.xWasPressed = gp.buttons[2].pressed
+    if (pressed(1)) { // B = close
+      quickChatOpen = false
+      updateQuickChatUI()
+    }
 
-  // Y (3) = cycle camera mode (Tab)
-  if (gp.buttons[3].pressed && !gamepadState.yWasPressed) {
-    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Tab' }))
-  }
-  gamepadState.yWasPressed = gp.buttons[3].pressed
+  } else if (emoteOpen) {
+    // IN EMOTE PANEL: D-pad navigates, A triggers, B closes
+    const emoteBtns = emotePanel.querySelectorAll<HTMLButtonElement>('.emote-btn')
+    const ei = gamepadState.emoteIndex ?? 0
 
-  // D-pad up (12) = front view toggle
-  if (gp.buttons[12]?.pressed && !gamepadState.dpadUpWas) {
-    cam.frontView = !cam.frontView
-  }
-  gamepadState.dpadUpWas = gp.buttons[12]?.pressed || false
+    if (pressed(12)) gamepadState.emoteIndex = Math.max(0, ei - 4) // D-up (grid row)
+    if (pressed(13)) gamepadState.emoteIndex = Math.min(emoteBtns.length - 1, ei + 4) // D-down
+    if (pressed(14)) gamepadState.emoteIndex = Math.max(0, ei - 1) // D-left
+    if (pressed(15)) gamepadState.emoteIndex = Math.min(emoteBtns.length - 1, ei + 1) // D-right
 
-  // Start (9) = toggle GUI menu
-  if (gp.buttons[9]?.pressed && !gamepadState.startWas) {
-    toggleMenu()
-  }
-  gamepadState.startWas = gp.buttons[9]?.pressed || false
+    emoteBtns.forEach((b, i) => b.classList.toggle('gp-focus', i === (gamepadState.emoteIndex ?? 0)))
 
-  // L-trigger/R-trigger or bumpers for sprint
+    if (pressed(0)) emoteBtns[gamepadState.emoteIndex ?? 0]?.click() // A = select
+    if (pressed(1)) emotePanel.classList.add('hidden') // B = close
+
+  } else {
+    // GAMEPLAY: normal controls
+    if (gp.buttons[0]?.pressed) keys['Space'] = true // A = jump (hold ok)
+
+    if (pressed(1)) { // B = emote panel
+      gamepadState.emoteIndex = 0
+      emotePanel.classList.toggle('hidden')
+    }
+
+    if (pressed(2)) { // X = quick chat (gamepad-friendly, no keyboard needed)
+      quickChatOpen = true
+      quickChatIndex = 0
+      updateQuickChatUI()
+    }
+
+    if (pressed(3)) { // Y = cycle camera mode
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Tab' }))
+    }
+
+    if (pressed(12)) cam.frontView = !cam.frontView // D-up = front view
+
+    if (pressed(9)) toggleMenu() // Start = menu
+  }
+
+  // Triggers = sprint (always, regardless of context)
   if (gp.buttons[6]?.pressed || gp.buttons[7]?.pressed) {
     keys['ShiftLeft'] = true
   } else if (gamepadState.connected) {
     keys['ShiftLeft'] = sprintOn
   }
+}
+
+// --- Quick chat UI (for gamepad) ---
+const quickChatEl = document.createElement('div')
+quickChatEl.id = 'quick-chat'
+quickChatEl.className = 'hidden'
+document.body.appendChild(quickChatEl)
+
+function updateQuickChatUI() {
+  if (!quickChatOpen) {
+    quickChatEl.className = 'hidden'
+    return
+  }
+  quickChatEl.className = ''
+  quickChatEl.innerHTML = QUICK_CHATS.map((msg, i) =>
+    `<div class="qc-item${i === quickChatIndex ? ' active' : ''}">${msg}</div>`
+  ).join('')
 }
 
 // --- Character (animated model) ---

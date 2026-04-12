@@ -46,13 +46,20 @@ export class Interactable {
     const model = gltf.scene
     this.model = model
 
-    // Scale
-    model.scale.setScalar(this.config.scale || 1)
+    // Auto-scale to target height using config.scale as target height in meters
+    // (e.g. scale=0.5 means the object should be 0.5m tall)
+    const rawBox = new THREE.Box3().setFromObject(model)
+    const rawSize = rawBox.getSize(new THREE.Vector3())
+    const rawHeight = Math.max(rawSize.y, 0.01)
+    const targetHeight = this.config.scale || 1 // meters
+    const autoScale = targetHeight / rawHeight
+    model.scale.setScalar(autoScale)
+    console.log(`${this.config.name}: raw ${rawSize.x.toFixed(2)}x${rawSize.y.toFixed(2)}x${rawSize.z.toFixed(2)} → scale ${autoScale.toFixed(4)} (target ${targetHeight}m)`)
 
-    // Position on ground
+    // Position on ground (feet at y=0)
     const box = new THREE.Box3().setFromObject(model)
     model.position.copy(position)
-    model.position.y = -box.min.y * (this.config.scale || 1)
+    model.position.y = -box.min.y
 
     // Shadows
     model.traverse((child: THREE.Object3D) => {

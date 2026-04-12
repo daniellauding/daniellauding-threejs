@@ -757,17 +757,18 @@ character.load(scene, {
   // Place interactable objects in scene
   const chairObj = new Interactable({
     name: 'Chair', type: 'sit', modelPath: '/models/objects/chair.glb',
-    scale: 0.4, promptText: 'Press G to sit',
+    scale: 1.5, promptText: 'Press G to sit', // 1.5m total chair height
   })
   const rifleObj = new Interactable({
     name: 'Rifle', type: 'hold', modelPath: '/models/objects/rifle.glb',
-    scale: 0.3, attachBone: 'RightHand',
-    offset: new THREE.Vector3(0, 0, 0.1),
+    scale: 1.0, attachBone: 'RightHand', // 1.0m long rifle
+    offset: new THREE.Vector3(0, 0, 0.02),
+    rotationOffset: new THREE.Euler(-Math.PI / 2, 0, 0),
     promptText: 'Press G to pick up',
   })
   const skateObj = new Interactable({
     name: 'Skateboard', type: 'ride', modelPath: '/models/objects/skateboard.glb',
-    scale: 1.0, speedMultiplier: 2.5,
+    scale: 0.15, speedMultiplier: 2.5, // 0.15m tall (board is flat)
     promptText: 'Press G to ride',
   })
 
@@ -1132,7 +1133,9 @@ async function handleInteraction() {
       addChatMessage('* Stopped riding', 'system-msg')
     }
     if (item.config.type === 'hold' && item.model) {
-      // Drop weapon in front of player
+      // Detach from bone, drop in front of player
+      item.model.removeFromParent()
+      scene.add(item.model)
       const dropDir = new THREE.Vector3(-Math.sin(player.facingYaw), 0, -Math.cos(player.facingYaw))
       item.model.position.copy(player.position).add(dropDir.multiplyScalar(1.5))
       item.model.position.y = 0
@@ -1184,10 +1187,15 @@ async function handleInteraction() {
     addChatMessage(`* Riding ${nearest.config.name}!`, 'system-msg')
 
   } else if (nearest.config.type === 'hold') {
-    // Keep weapon in scene - update position each frame to follow character
-    nearest.isActive = true
+    // Attach to RightHand bone (confirmed exists via Playwright test)
+    if (character.model && nearest.model) {
+      nearest.attachToBone(character.model, nearest.config.attachBone || 'RightHand')
+      if (!nearest.isActive) {
+        // Bone found but attachToBone didn't set isActive - force it
+        nearest.isActive = true
+      }
+    }
     interactions.activeItem = nearest
-    // Play rifle hold animation
     await character.loadEmote(interactionAnims.rifleHold)
     character.playEmote(interactionAnims.rifleHold)
     addChatMessage(`* Picked up ${nearest.config.name}`, 'system-msg')
@@ -1411,10 +1419,10 @@ function update(delta: number) {
 
   // Update held/ridden objects to follow player in world space
   if (isRiding && ridingItem?.model) {
-    // Skateboard at player's feet, facing same direction
-    ridingItem.model.position.set(player.position.x, 0.05, player.position.z)
+    // Skateboard under player's feet, facing movement direction
+    ridingItem.model.position.set(player.position.x, 0, player.position.z)
     ridingItem.model.rotation.set(0, player.facingYaw, 0)
-    ridingItem.model.scale.setScalar(ridingItem.config.scale || 1)
+    // Keep the auto-calculated scale from load()
 
     // Spin wheels
     if (horizontalSpeed > 0.5) {
@@ -1426,19 +1434,7 @@ function update(delta: number) {
     }
   }
 
-  if (interactions.activeItem?.config.type === 'hold' && interactions.activeItem.model) {
-    const item = interactions.activeItem
-    // Position rifle: right side, chest height, slightly forward
-    const rightOffset = new THREE.Vector3(0.3, 1.0, 0.35)
-    rightOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.facingYaw)
-    item.model!.position.set(
-      player.position.x + rightOffset.x,
-      player.position.y + rightOffset.y,
-      player.position.z + rightOffset.z
-    )
-    item.model!.rotation.set(0, player.facingYaw, 0) // face same direction as character
-    item.model!.scale.setScalar(item.config.scale || 0.3)
-  }
+  // Rifle follows RightHand bone automatically (no per-frame update needed)
 
   // Stand on top of objects (y-axis collision) - includes interactables
   for (const obj of collidables) {

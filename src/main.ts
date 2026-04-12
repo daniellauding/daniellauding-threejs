@@ -1115,24 +1115,24 @@ async function handleInteraction() {
 
   // Already interacting → stop
   if (item) {
+    // Always reset item and character state
+    item.isActive = false
+    interactions.activeItem = null
+    character.stopEmote()
+
     if (isSitting) {
       isSitting = false
-      character.stopEmote()
       player.position.x += 1
       player.position.y = 0
       addChatMessage('* Stood up', 'system-msg')
-    }
-    if (isRiding && ridingItem?.model) {
+    } else if (isRiding && ridingItem?.model) {
       isRiding = false
-      // Place skateboard on ground nearby
       ridingItem.model.position.set(player.position.x + 1, 0, player.position.z)
       ridingItem.model.rotation.set(0, 0, 0)
-      ridingItem.isActive = false
       ridingItem = null
-      character.setState('idle')
+      player.position.y = 0
       addChatMessage('* Stopped riding', 'system-msg')
-    }
-    if (item.config.type === 'hold' && item.model) {
+    } else if (item.config.type === 'hold' && item.model) {
       // Detach from bone, drop in front of player
       item.model.removeFromParent()
       scene.add(item.model)
@@ -1140,10 +1140,11 @@ async function handleInteraction() {
       item.model.position.copy(player.position).add(dropDir.multiplyScalar(1.5))
       item.model.position.y = 0
       item.model.rotation.set(0, 0, 0)
-      item.model.scale.setScalar(item.config.scale || 1)
-      item.isActive = false
-      character.stopEmote()
-      // Reset aim state
+      // Restore the auto-calculated scale (recalculate from target height)
+      item.model.scale.setScalar(1) // reset
+      const box = new THREE.Box3().setFromObject(item.model)
+      const h = box.getSize(new THREE.Vector3()).y || 1
+      item.model.scale.setScalar((item.config.scale || 1) / h)
       if (isAiming) {
         isAiming = false
         camera.fov = fpsMode ? 90 : 60
@@ -1151,7 +1152,6 @@ async function handleInteraction() {
       }
       addChatMessage(`* Dropped ${item.config.name}`, 'system-msg')
     }
-    interactions.activeItem = null
     return
   }
 
@@ -1170,9 +1170,9 @@ async function handleInteraction() {
       player.facingYaw = nearest.model.rotation.y // face chair direction
     }
     isSitting = true
-    // Play sit animation (lazy-load first time)
     await character.loadEmote(interactionAnims.sit)
     character.playEmote(interactionAnims.sit)
+    character.lockedEmote = true // don't cancel on camera movement
     nearest.isActive = true
     interactions.activeItem = nearest
     addChatMessage(`* Sitting on ${nearest.config.name}`, 'system-msg')

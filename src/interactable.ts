@@ -96,11 +96,19 @@ export class Interactable {
     })
 
     if (foundBone) {
+      // Save original world scale before reparenting
+      const worldScale = model.scale.x // auto-calculated in load()
+
       model.removeFromParent()
       foundBone.add(model)
       model.position.set(0, 0, 0)
       if (this.config.offset) model.position.copy(this.config.offset)
       if (this.config.rotationOffset) model.rotation.copy(this.config.rotationOffset)
+
+      // Compensate for inherited character scale so weapon stays world-sized
+      const charScale = characterModel.scale.x
+      model.scale.setScalar(worldScale / charScale)
+
       this.isActive = true
     } else {
       console.warn(`Bone "${boneName}" not found. Available bones:`)

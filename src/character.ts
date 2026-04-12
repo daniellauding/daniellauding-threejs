@@ -10,6 +10,7 @@ export class Character {
   actions: Map<string, THREE.AnimationAction> = new Map()
   currentState: string = 'idle'
   playingEmote = false
+  lockedEmote = false // true = don't cancel emote on movement (sit/ride)
   private fadeDuration = 0.25
   modelOffset = new THREE.Vector3()
   private loader = new GLTFLoader()
@@ -125,6 +126,7 @@ export class Character {
   stopEmote() {
     if (!this.playingEmote) return
     this.playingEmote = false
+    this.lockedEmote = false
     this.setState('idle')
   }
 
@@ -154,11 +156,12 @@ export class Character {
   }
 
   updateFromMovement(speed: number, isGrounded: boolean, isCrouching: boolean, isSprinting: boolean, isProne: boolean) {
-    // If playing emote and player starts moving, cancel emote
+    // Locked emote (sit/ride) = never cancel from movement
+    if (this.lockedEmote) return
+    // Regular emote = cancel if moving
     if (this.playingEmote && speed > 0.5) {
       this.stopEmote()
     }
-    // Don't override emote with movement state
     if (this.playingEmote) return
 
     if (!isGrounded) {

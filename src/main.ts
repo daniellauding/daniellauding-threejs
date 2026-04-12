@@ -1116,9 +1116,9 @@ async function handleInteraction() {
   if (item) {
     if (isSitting) {
       isSitting = false
-      character.setState('idle')
+      character.stopEmote()
       player.position.x += 1
-      player.position.y = 0 // back to ground level
+      player.position.y = 0
       addChatMessage('* Stood up', 'system-msg')
     }
     if (isRiding && ridingItem?.model) {
@@ -1140,6 +1140,12 @@ async function handleInteraction() {
       item.model.scale.setScalar(item.config.scale || 1)
       item.isActive = false
       character.stopEmote()
+      // Reset aim state
+      if (isAiming) {
+        isAiming = false
+        camera.fov = fpsMode ? 90 : 60
+        camera.updateProjectionMatrix()
+      }
       addChatMessage(`* Dropped ${item.config.name}`, 'system-msg')
     }
     interactions.activeItem = null
@@ -1156,8 +1162,9 @@ async function handleInteraction() {
     // Setting player.position.y = 0.35 puts feet above ground so hips land on seat.
     if (nearest.model) {
       const chairPos = nearest.model.position.clone()
-      player.position.set(chairPos.x, 0.2, chairPos.z)
+      player.position.set(chairPos.x, -0.1, chairPos.z)
       player.velocity.set(0, 0, 0)
+      player.facingYaw = nearest.model.rotation.y // face chair direction
     }
     isSitting = true
     // Play sit animation (lazy-load first time)
@@ -1173,6 +1180,7 @@ async function handleInteraction() {
     ridingItem = nearest
     nearest.isActive = true
     interactions.activeItem = nearest
+    player.position.y = 0.1 // stand on board
     addChatMessage(`* Riding ${nearest.config.name}!`, 'system-msg')
 
   } else if (nearest.config.type === 'hold') {
@@ -1217,8 +1225,6 @@ function update(delta: number) {
   // Can't move while sitting
   if (isSitting) {
     player.velocity.set(0, 0, 0)
-    character.update(delta)
-    // still update camera + bubble
   }
 
   // Ride speed boost
@@ -1268,7 +1274,7 @@ function update(delta: number) {
   }
 
   // Jump
-  if ((keys['Space'] || keys['GamepadA']) && player.isGrounded) {
+  if ((keys['Space'] || keys['GamepadA']) && player.isGrounded && !isSitting) {
     player.velocity.y = player.jumpForce
     player.isGrounded = false
   }
@@ -1281,9 +1287,10 @@ function update(delta: number) {
   player.position.z += player.velocity.z * delta
   player.position.y += player.velocity.y * delta
 
-  // Ground collision
-  if (player.position.y <= 0) {
-    player.position.y = 0
+  // Ground collision (riding = elevated on board)
+  const groundLevel = isRiding ? 0.1 : 0
+  if (player.position.y <= groundLevel) {
+    player.position.y = groundLevel
     player.velocity.y = 0
     player.isGrounded = true
   }
@@ -1421,16 +1428,15 @@ function update(delta: number) {
 
   if (interactions.activeItem?.config.type === 'hold' && interactions.activeItem.model) {
     const item = interactions.activeItem
-    // Position rifle at right hand area in world space
-    const rightOffset = new THREE.Vector3(0.25, 0.85, -0.25) // right, up, forward
-    // Rotate offset by character facing
+    // Position rifle: right side, chest height, slightly forward
+    const rightOffset = new THREE.Vector3(0.3, 1.0, 0.35)
     rightOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.facingYaw)
     item.model!.position.set(
       player.position.x + rightOffset.x,
       player.position.y + rightOffset.y,
       player.position.z + rightOffset.z
     )
-    item.model!.rotation.set(0, player.facingYaw + Math.PI, 0) // face same direction as character
+    item.model!.rotation.set(0, player.facingYaw, 0) // face same direction as character
     item.model!.scale.setScalar(item.config.scale || 0.3)
   }
 
